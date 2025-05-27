@@ -1,5 +1,5 @@
 <tech-stack>
-Frontend - Blazor WebApp (.NET 8) - Interactive render mode Server - Global location:
+Frontend - Blazor WebApp (.NET 9) - Interactive render mode Server - Global location:
 - Blazor.Bootstrap zapewnia bibliotekę dostępnych komponentów , na których oprzemy UI
 
 Backend - Supabase jako kompleksowe rozwiązanie backendowe:
