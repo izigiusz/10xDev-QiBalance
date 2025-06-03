@@ -68,6 +68,22 @@ Kryteria akceptacji:
 - Po kliknięciu przycisku „Zapisz” zalecenia są trwale przechowywane w profilu.  
 - Zapisane zalecenia nie mogą być modyfikowane.
 
+
+US-005: Bezpieczny dostęp i uwierzytelnianie
+
+- Tytuł: Bezpieczny dostęp
+- Opis: Jako użytkownik chcę mieć możliwość rejestracji i logowania się do systemu w sposób zapewniający bezpieczeństwo moich danych.
+- Kryteria akceptacji:
+  - Logowanie i rejestracja odbywają się na dedykowanych stronach.
+  - Logowanie wymaga podania adresu email i hasła.
+  - Rejestracja wymaga podania adresu email, hasła i potwierdzenia hasła.
+  - Użytkownik MOŻE korzystać z tworzenia zaleceń dietetycznych "ad-hoc" bez logowania się do systemu (US-001).
+  - Użytkownik NIE MOŻE zapisywać usyskanych zaleceń bez logowania się do systemu (US-003).
+  - Użytkownik może logować się do systemu poprzez przycisk w prawym górnym rogu.
+  - Użytkownik może się wylogować z systemu poprzez przycisk w prawym górnym rogu.
+  - Nie korzystamy z zewnętrznych serwisów logowania (np. Google, GitHub).
+  - Odzyskiwanie hasła powinno w późniejszym etapie
+
 ## 6. Metryki sukcesu
 - 75% użytkowników generuje przynajmniej jedno zalecenie dietetyczne raz na pół roku.  
 - Monitorowanie liczby zapisanych zaleceń oraz aktywności użytkowników w trakcie sesji diagnostycznych.
