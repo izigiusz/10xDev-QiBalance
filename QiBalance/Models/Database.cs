@@ -3,6 +3,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Supabase.Postgrest.Attributes;
 using Supabase.Postgrest.Models;
+using QiBalance.Services;
 
 namespace QiBalance.Models
 {
@@ -11,13 +12,22 @@ namespace QiBalance.Models
     /// Represents AI-generated health recommendations for authenticated users
     /// </summary>
     [Supabase.Postgrest.Attributes.Table("recommendations")]
-    public class Recommendation : BaseModel
+    public class Recommendation : BaseModel, IEntity
     {
         /// <summary>
         /// Unique identifier for each recommendation
         /// </summary>
         [PrimaryKey("recommendation_id")]
         public Guid RecommendationId { get; set; } = Guid.NewGuid();
+
+        /// <summary>
+        /// Implementation of IEntity.Id property
+        /// </summary>
+        public object? Id 
+        { 
+            get => RecommendationId; 
+            set => RecommendationId = value is Guid guid ? guid : Guid.Empty; 
+        }
 
         /// <summary>
         /// UUID of the user who owns this recommendation (FK to auth.users.id)
