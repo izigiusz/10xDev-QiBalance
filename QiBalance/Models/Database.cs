@@ -1,6 +1,8 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Supabase.Postgrest.Attributes;
+using Supabase.Postgrest.Models;
 
 namespace QiBalance.Models
 {
@@ -8,34 +10,31 @@ namespace QiBalance.Models
     /// Database model for recommendations table
     /// Represents AI-generated health recommendations for authenticated users
     /// </summary>
-    [Table("recommendations")]
-    public class Recommendation
+    [Supabase.Postgrest.Attributes.Table("recommendations")]
+    public class Recommendation : BaseModel
     {
         /// <summary>
         /// Unique identifier for each recommendation
         /// </summary>
-        [Key]
-        [Column("recommendation_id")]
+        [PrimaryKey("recommendation_id")]
         public Guid RecommendationId { get; set; } = Guid.NewGuid();
 
         /// <summary>
         /// UUID of the user who owns this recommendation (FK to auth.users.id)
         /// </summary>
-        [Required]
-        [Column("user_id")]
+        [Supabase.Postgrest.Attributes.Column("user_id")]
         public Guid UserId { get; set; }
 
         /// <summary>
         /// Timestamp when the recommendation was generated
         /// </summary>
-        [Column("date_generated")]
+        [Supabase.Postgrest.Attributes.Column("date_generated")]
         public DateTime DateGenerated { get; set; } = DateTime.UtcNow;
 
         /// <summary>
         /// The actual recommendation content provided to the user
         /// </summary>
-        [Required]
-        [Column("recommendation_text")]
+        [Supabase.Postgrest.Attributes.Column("recommendation_text")]
         public string RecommendationText { get; set; } = string.Empty;
     }
 

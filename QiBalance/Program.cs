@@ -1,4 +1,7 @@
 using QiBalance.Components;
+using QiBalance.Services;
+using QiBalance.Models;
+using Microsoft.AspNetCore.Components.Authorization;
 
 namespace QiBalance
 {
@@ -11,6 +14,15 @@ namespace QiBalance
             // Add services to the container.
             builder.Services.AddRazorComponents()
                 .AddInteractiveServerComponents();
+
+            // Dodaj usługi Supabase
+            builder.Services.AddSingleton<ISupabaseService, SupabaseService>();
+            builder.Services.AddScoped<IAuthService, AuthService>();
+            builder.Services.AddScoped<IDatabaseContext, DatabaseService>();
+            
+            // Dodaj dostawcę uwierzytelniania
+            builder.Services.AddScoped<AuthenticationStateProvider, SupabaseAuthenticationStateProvider>();
+            builder.Services.AddAuthorizationCore();
 
             var app = builder.Build();
 

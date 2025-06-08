@@ -1,0 +1,140 @@
+@page "/register"
+@using QiBalance.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Rejestracja - QiBalance</PageTitle>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="text-center">Rejestracja</h3>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="@registerModel" OnValidSubmit="@HandleRegister">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary class="text-danger" />
+
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email:</label>
+                            <InputText id="email" class="form-control" @bind-Value="registerModel.Email" />
+                            <ValidationMessage For="@(() => registerModel.Email)" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Hasło:</label>
+                            <InputText id="password" type="password" class="form-control" @bind-Value="registerModel.Password" />
+                            <ValidationMessage For="@(() => registerModel.Password)" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="confirmPassword" class="form-label">Potwierdź hasło:</label>
+                            <InputText id="confirmPassword" type="password" class="form-control" @bind-Value="registerModel.ConfirmPassword" />
+                            <ValidationMessage For="@(() => registerModel.ConfirmPassword)" />
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(errorMessage))
+                        {
+                            <div class="alert alert-danger">
+                                @errorMessage
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(successMessage))
+                        {
+                            <div class="alert alert-success">
+                                @successMessage
+                            </div>
+                        }
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary" disabled="@isLoading">
+                                @if (isLoading)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                }
+                                Zarejestruj się
+                            </button>
+                        </div>
+                    </EditForm>
+
+                    <div class="text-center mt-3">
+                        <p>Masz już konto? <a href="/login">Zaloguj się</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private RegisterModel registerModel = new();
+    private string errorMessage = string.Empty;
+    private string successMessage = string.Empty;
+    private bool isLoading = false;
+
+    private async Task HandleRegister()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = string.Empty;
+            successMessage = string.Empty;
+
+            if (registerModel.Password != registerModel.ConfirmPassword)
+            {
+                errorMessage = "Hasła nie są identyczne.";
+                return;
+            }
+
+            var result = await AuthService.SignUpAsync(registerModel.Email, registerModel.Password);
+            
+            if (result != null)
+            {
+                successMessage = "Konto zostało utworzone! Sprawdź swój email w celu potwierdzenia.";
+                
+                // Jeśli użytkownik został automatycznie zalogowany
+                if (result.User != null)
+                {
+                    if (AuthStateProvider is SupabaseAuthenticationStateProvider supabaseProvider)
+                    {
+                        supabaseProvider.NotifyAuthenticationStateChanged();
+                    }
+                    
+                    // Opcjonalnie przekieruj do strony głównej
+                    // Navigation.NavigateTo("/");
+                }
+            }
+            else
+            {
+                errorMessage = "Wystąpił błąd podczas rejestracji. Sprawdź podane dane.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Wystąpił błąd podczas rejestracji. Spróbuj ponownie.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private class RegisterModel
+    {
+        [Required(ErrorMessage = "Email jest wymagany")]
+        [EmailAddress(ErrorMessage = "Nieprawidłowy format email")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Hasło jest wymagane")]
+        [MinLength(8, ErrorMessage = "Hasło musi mieć co najmniej 8 znaków")]
+        public string Password { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Potwierdzenie hasła jest wymagane")]
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+} 
