@@ -13,9 +13,9 @@ create table public.recommendations (
     -- Primary key using UUID for security and scalability
     recommendation_id uuid primary key default uuid_generate_v4(),
     
-    -- Foreign key reference to auth.users.email
-    -- Using varchar to match auth.users.email type
-    user_id varchar not null,
+    -- Foreign key reference to auth.users.id
+    -- Using uuid to match auth.users.id type
+    user_id uuid not null,
     
     -- Timestamp when the recommendation was generated
     -- Using timestamptz for timezone awareness
@@ -27,7 +27,7 @@ create table public.recommendations (
     
     -- Add foreign key constraint to auth.users
     constraint fk_recommendations_user_id 
-        foreign key (user_id) references auth.users(email) 
+        foreign key (user_id) references auth.users(id) 
         on delete cascade
 );
 
@@ -44,37 +44,37 @@ create index idx_recommendations_date_generated on public.recommendations(date_g
 alter table public.recommendations enable row level security;
 
 -- RLS Policy: Allow authenticated users to select their own recommendations
--- This policy ensures users can only view recommendations associated with their email
+-- This policy ensures users can only view recommendations associated with their user ID
 create policy "Users can view own recommendations" on public.recommendations
     for select
     to authenticated
-    using (user_id = auth.email());
+    using (user_id = auth.uid());
 
 -- RLS Policy: Allow authenticated users to insert their own recommendations
 -- This policy ensures users can only create recommendations for themselves
 create policy "Users can insert own recommendations" on public.recommendations
     for insert
     to authenticated
-    with check (user_id = auth.email());
+    with check (user_id = auth.uid());
 
 -- RLS Policy: Allow authenticated users to update their own recommendations
 -- This policy ensures users can only modify their own recommendations
 create policy "Users can update own recommendations" on public.recommendations
     for update
     to authenticated
-    using (user_id = auth.email())
-    with check (user_id = auth.email());
+    using (user_id = auth.uid())
+    with check (user_id = auth.uid());
 
 -- RLS Policy: Allow authenticated users to delete their own recommendations
 -- This policy ensures users can only delete their own recommendations
 create policy "Users can delete own recommendations" on public.recommendations
     for delete
     to authenticated
-    using (user_id = auth.email());
+    using (user_id = auth.uid());
 
 -- Add comments to the table and columns for documentation
 comment on table public.recommendations is 'Stores AI-generated health recommendations for authenticated users';
 comment on column public.recommendations.recommendation_id is 'Unique identifier for each recommendation';
-comment on column public.recommendations.user_id is 'Email of the user who owns this recommendation (FK to auth.users.email)';
+comment on column public.recommendations.user_id is 'UUID of the user who owns this recommendation (FK to auth.users.id)';
 comment on column public.recommendations.date_generated is 'Timestamp when the recommendation was generated';
 comment on column public.recommendations.recommendation_text is 'The actual recommendation content provided to the user'; 
