@@ -172,4 +172,18 @@ namespace QiBalance.Models.DTOs
         [Required]
         public RecommendationResult RecommendationResult { get; set; } = new();
     }
+
+    /// <summary>
+    /// DTO for diagnostic session information
+    /// </summary>
+    public class DiagnosticSessionInfo
+    {
+        public Guid SessionId { get; set; }
+        public string UserEmail { get; set; } = string.Empty;
+        public int CurrentQuestion { get; set; }
+        public int TotalQuestions { get; set; }
+        public int CurrentPhase { get; set; }
+        public TimeSpan TimeRemaining { get; set; }
+        public DateTime LastActivity { get; set; }
+    }
 } 

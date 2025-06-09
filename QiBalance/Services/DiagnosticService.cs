@@ -14,6 +14,12 @@ namespace QiBalance.Services
         Task<DiagnosticResponse> SubmitAnswerAsync(Guid sessionId, string questionId, bool answer, string? userId = null);
         Task<bool> IsSessionValidAsync(Guid sessionId);
         Task ClearExpiredSessionsAsync();
+        
+        // Additional methods for enhanced diagnostic flow
+        Task<DiagnosticQuestion?> GetNextQuestionAsync(string userEmail, int questionNumber);
+        Task<DiagnosticResponse> SubmitAnswerAsync(string userEmail, int questionNumber, bool answer);
+        Task<bool> ValidateSessionAsync(string userEmail);
+        Task<DiagnosticSessionInfo?> GetSessionInfoAsync(string userEmail);
     }
 
     /// <summary>
@@ -79,9 +85,15 @@ namespace QiBalance.Services
                     Answers = new List<DiagnosticAnswer>()
                 };
 
-                // Cache session
+                // Cache session by both SessionId and UserId
                 var cacheKey = GetSessionCacheKey(session.SessionId);
                 _cache.Set(cacheKey, session, TimeSpan.FromHours(SessionTimeoutHours));
+                
+                if (!string.IsNullOrEmpty(userId))
+                {
+                    var userCacheKey = GetUserSessionCacheKey(userId);
+                    _cache.Set(userCacheKey, session, TimeSpan.FromHours(SessionTimeoutHours));
+                }
 
                 _logger.LogInformation("Diagnostic session created: {SessionId}, Phase: {Phase}, Questions: {QuestionCount}", 
                     session.SessionId, session.CurrentPhase, session.Questions.Count);
@@ -346,6 +358,268 @@ namespace QiBalance.Services
         private static string GetSessionCacheKey(Guid sessionId)
         {
             return $"diagnostic_session_{sessionId}";
+        }
+
+        /// <summary>
+        /// Get user session cache key
+        /// </summary>
+        private static string GetUserSessionCacheKey(string userEmail)
+        {
+            return $"user_diagnostic_session_{userEmail}";
+        }
+
+        // Enhanced methods for simplified diagnostic flow
+
+        /// <summary>
+        /// Get next question for user based on question number
+        /// </summary>
+        public async Task<DiagnosticQuestion?> GetNextQuestionAsync(string userEmail, int questionNumber)
+        {
+            try
+            {
+                _validationService.ValidateUserId(userEmail);
+
+                // Get or create session for user
+                var session = await GetOrCreateUserSessionAsync(userEmail);
+                if (session == null)
+                {
+                    _logger.LogWarning("Could not get or create session for user: {UserEmail}", userEmail);
+                    return null;
+                }
+
+                // Ensure we have enough questions generated
+                while (session.Questions.Count < questionNumber)
+                {
+                    var currentPhase = ((session.Questions.Count) / QuestionsPerPhase) + 1;
+                    if (currentPhase <= 3)
+                    {
+                        await GenerateNextPhaseAsync(session, currentPhase);
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                // Return the requested question
+                                if (questionNumber <= session.Questions.Count)
+                {
+                    var question = session.Questions[questionNumber - 1];
+                    await UpdateUserSessionInCacheAsync(session, userEmail);
+                    return question;
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting next question for user: {UserEmail}, Question: {QuestionNumber}", 
+                    userEmail, questionNumber);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Submit answer for user based on question number
+        /// </summary>
+        public async Task<DiagnosticResponse> SubmitAnswerAsync(string userEmail, int questionNumber, bool answer)
+        {
+            try
+            {
+                _validationService.ValidateUserId(userEmail);
+
+                var session = await GetOrCreateUserSessionAsync(userEmail);
+                if (session == null)
+                {
+                    throw new InvalidOperationException("Nie można znaleźć sesji diagnostycznej");
+                }
+
+                // Get the question
+                if (questionNumber > session.Questions.Count)
+                {
+                    throw new InvalidOperationException($"Pytanie {questionNumber} nie istnieje");
+                }
+
+                var question = session.Questions[questionNumber - 1];
+
+                // Check if answer already exists for this question
+                var existingAnswer = session.Answers.FirstOrDefault(a => a.QuestionId == question.Id);
+                if (existingAnswer != null)
+                {
+                    // Update existing answer
+                    existingAnswer.Answer = answer;
+                    existingAnswer.AnsweredAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    // Add new answer
+                    session.Answers.Add(new DiagnosticAnswer
+                    {
+                        QuestionId = question.Id,
+                        Question = question.QuestionText,
+                        Answer = answer,
+                        AnsweredAt = DateTime.UtcNow
+                    });
+                }
+
+                session.CurrentQuestion = Math.Max(session.CurrentQuestion, questionNumber + 1);
+
+                // Check if we need to generate next phase
+                await HandlePhaseTransitionAsync(session);
+
+                // Check if we have more questions
+                if (session.CurrentQuestion <= session.TotalQuestions)
+                {
+                    // Ensure next question is available
+                    var nextQuestion = await GetNextQuestionAsync(userEmail, session.CurrentQuestion);
+                    
+                    await UpdateUserSessionInCacheAsync(session, userEmail);
+
+                    return new DiagnosticResponse
+                    {
+                        HasMoreQuestions = true,
+                        NextQuestion = nextQuestion,
+                        CurrentQuestion = session.CurrentQuestion,
+                        TotalQuestions = session.TotalQuestions,
+                        CurrentPhase = session.CurrentPhase
+                    };
+                }
+                else
+                {
+                    // Generate recommendations
+                    var recommendations = await _openAIService.GenerateRecommendationsAsync(
+                        session.InitialSymptoms, 
+                        session.Answers);
+
+                    // Remove session from cache
+                    _cache.Remove(GetUserSessionCacheKey(userEmail));
+
+                    return new DiagnosticResponse
+                    {
+                        HasMoreQuestions = false,
+                        CurrentQuestion = session.CurrentQuestion,
+                        TotalQuestions = session.TotalQuestions,
+                        CurrentPhase = session.CurrentPhase,
+                        Recommendations = recommendations
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error submitting answer for user: {UserEmail}, Question: {QuestionNumber}", 
+                    userEmail, questionNumber);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Validate session for user
+        /// </summary>
+        public async Task<bool> ValidateSessionAsync(string userEmail)
+        {
+            try
+            {
+                _validationService.ValidateUserId(userEmail);
+                
+                var session = await GetUserSessionFromCacheAsync(userEmail);
+                return session != null && session.ExpiresAt > DateTime.UtcNow;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating session for user: {UserEmail}", userEmail);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Get session information for user
+        /// </summary>
+        public async Task<DiagnosticSessionInfo?> GetSessionInfoAsync(string userEmail)
+        {
+            try
+            {
+                _validationService.ValidateUserId(userEmail);
+                
+                var session = await GetUserSessionFromCacheAsync(userEmail);
+                if (session == null)
+                {
+                    return null;
+                }
+
+                return new DiagnosticSessionInfo
+                {
+                    SessionId = session.SessionId,
+                    UserEmail = userEmail,
+                    CurrentQuestion = session.CurrentQuestion,
+                    TotalQuestions = session.TotalQuestions,
+                    CurrentPhase = session.CurrentPhase,
+                    TimeRemaining = session.ExpiresAt - DateTime.UtcNow,
+                    LastActivity = session.Answers.LastOrDefault()?.AnsweredAt ?? session.CreatedAt
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting session info for user: {UserEmail}", userEmail);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Get or create diagnostic session for user
+        /// </summary>
+        private async Task<DiagnosticSession?> GetOrCreateUserSessionAsync(string userEmail)
+        {
+            var session = await GetUserSessionFromCacheAsync(userEmail);
+            if (session != null && session.ExpiresAt > DateTime.UtcNow)
+            {
+                return session;
+            }
+
+            // Create new session if none exists or expired
+            return await StartSessionAsync("", userEmail);
+        }
+
+        /// <summary>
+        /// Get user session from cache
+        /// </summary>
+        private async Task<DiagnosticSession?> GetUserSessionFromCacheAsync(string userEmail)
+        {
+            try
+            {
+                var cacheKey = GetUserSessionCacheKey(userEmail);
+                var session = _cache.Get<DiagnosticSession>(cacheKey);
+                
+                if (session != null && session.ExpiresAt < DateTime.UtcNow)
+                {
+                    _cache.Remove(cacheKey);
+                    return null;
+                }
+                
+                return await Task.FromResult(session);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user session from cache: {UserEmail}", userEmail);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Update user session in cache
+        /// </summary>
+        private async Task UpdateUserSessionInCacheAsync(DiagnosticSession session, string userEmail)
+        {
+            try
+            {
+                var cacheKey = GetUserSessionCacheKey(userEmail);
+                _cache.Set(cacheKey, session, TimeSpan.FromHours(SessionTimeoutHours));
+                await Task.CompletedTask;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating user session in cache: {UserEmail}", userEmail);
+                throw;
+            }
         }
     }
 } 

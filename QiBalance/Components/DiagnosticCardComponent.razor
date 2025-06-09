@@ -1,0 +1,113 @@
+@* Diagnostic Card Component - Main container for displaying diagnostic question with answer options *@
+
+<div class="diagnostic-card card border-0 shadow">
+    <div class="card-header bg-light border-0 py-3">
+        <div class="d-flex justify-content-between align-items-center">
+            <h6 class="mb-0 text-muted">
+                <i class="bi bi-chat-square-text me-2"></i>
+                Pytanie diagnostyczne
+            </h6>
+            @if (IsLoading)
+            {
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                    <span class="visually-hidden">Ładowanie...</span>
+                </div>
+            }
+        </div>
+    </div>
+    
+    <div class="card-body p-4">
+        @if (CurrentQuestion != null && !string.IsNullOrEmpty(CurrentQuestion.QuestionText))
+        {
+            <div class="question-content mb-4">
+                <p class="question-text fs-5 mb-0 text-dark fw-normal lh-base">
+                    @CurrentQuestion.QuestionText
+                </p>
+            </div>
+            
+            <div class="answer-section">
+                <p class="answer-prompt text-muted mb-3">
+                    <small>Wybierz odpowiedź, która najlepiej opisuje Twoją sytuację:</small>
+                </p>
+                
+                <YesNoButtonsComponent 
+                    IsDisabled="@IsLoading"
+                    OnAnswerClick="HandleAnswerSelected" />
+            </div>
+        }
+        else
+        {
+            <div class="loading-placeholder text-center py-4">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Ładowanie pytania...</span>
+                </div>
+                <p class="text-muted mb-0">Przygotowywanie pytania...</p>
+            </div>
+        }
+    </div>
+    
+    @if (IsLoading)
+    {
+        <div class="loading-overlay position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center">
+            <div class="bg-white bg-opacity-75 w-100 h-100 d-flex align-items-center justify-content-center">
+                <div class="text-center">
+                    <div class="spinner-border text-primary mb-2" role="status">
+                        <span class="visually-hidden">Przetwarzanie odpowiedzi...</span>
+                    </div>
+                    <p class="text-muted mb-0">
+                        <small>Przetwarzanie odpowiedzi...</small>
+                    </p>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<link href="~/css/diagnostic-components.css" rel="stylesheet" />
+
+@code {
+    /// <summary>
+    /// Current diagnostic question to display
+    /// </summary>
+    [Parameter]
+    public DiagnosticQuestion? CurrentQuestion { get; set; }
+    
+    /// <summary>
+    /// Whether the component is in loading state
+    /// </summary>
+    [Parameter]
+    public bool IsLoading { get; set; } = false;
+    
+    /// <summary>
+    /// Event callback when user selects an answer
+    /// </summary>
+    [Parameter]
+    public EventCallback<bool> OnAnswerSelected { get; set; }
+    
+    protected override void OnParametersSet()
+    {
+        // Validate that if we have a question, it has required properties
+        if (CurrentQuestion != null && string.IsNullOrWhiteSpace(CurrentQuestion.QuestionText))
+        {
+            throw new ArgumentException(
+                "CurrentQuestion must have non-empty QuestionText", 
+                nameof(CurrentQuestion));
+        }
+    }
+    
+    /// <summary>
+    /// Handle answer selection from child component
+    /// </summary>
+    private async Task HandleAnswerSelected(bool answer)
+    {
+        if (IsLoading || CurrentQuestion == null)
+        {
+            return;
+        }
+        
+        if (OnAnswerSelected.HasDelegate)
+        {
+            await OnAnswerSelected.InvokeAsync(answer);
+        }
+    }
+} 

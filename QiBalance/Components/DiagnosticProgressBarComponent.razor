@@ -1,0 +1,107 @@
+@* Diagnostic Progress Bar Component - Shows current progress through 3-phase TCM diagnostic *@
+
+<div class="diagnostic-progress-container mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="progress-label text-muted">
+            <small>Pytanie @CurrentQuestion z @TotalQuestions</small>
+        </span>
+        <span class="phase-label badge bg-primary">
+            Faza @CurrentPhase
+        </span>
+    </div>
+    
+    <div class="progress diagnostic-progress" style="height: 8px;">
+        <div class="progress-bar progress-bar-animated" 
+             role="progressbar" 
+             style="width: @(ProgressPercentage)%"
+             aria-valuenow="@CurrentQuestion" 
+             aria-valuemin="0" 
+             aria-valuemax="@TotalQuestions"
+             aria-label="Postęp diagnozy: @CurrentQuestion z @TotalQuestions pytań, Faza @CurrentPhase">
+        </div>
+    </div>
+    
+    <div class="d-flex justify-content-between mt-2">
+        <small class="text-muted">@(ProgressPercentage.ToString("F0"))% ukończone</small>
+        <small class="text-muted">
+            @GetPhaseProgressText()
+        </small>
+    </div>
+</div>
+
+<link href="~/css/diagnostic-components.css" rel="stylesheet" />
+
+@code {
+    /// <summary>
+    /// Current question number (1-based)
+    /// </summary>
+    [Parameter]
+    public int CurrentQuestion { get; set; } = 1;
+    
+    /// <summary>
+    /// Total number of questions in diagnostic flow
+    /// </summary>
+    [Parameter]
+    public int TotalQuestions { get; set; } = 15;
+    
+    /// <summary>
+    /// Current diagnostic phase (1-3)
+    /// </summary>
+    [Parameter]
+    public int CurrentPhase { get; set; } = 1;
+    
+    /// <summary>
+    /// Calculated progress percentage
+    /// </summary>
+    private double ProgressPercentage => TotalQuestions > 0 
+        ? Math.Min(100.0, (double)(CurrentQuestion - 1) / TotalQuestions * 100.0)
+        : 0.0;
+    
+    protected override void OnParametersSet()
+    {
+        // Validate parameters
+        if (CurrentQuestion < 1 || CurrentQuestion > TotalQuestions)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(CurrentQuestion), 
+                $"CurrentQuestion must be between 1 and {TotalQuestions}");
+        }
+        
+        if (CurrentPhase < 1 || CurrentPhase > 3)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(CurrentPhase), 
+                "CurrentPhase must be between 1 and 3");
+        }
+        
+        if (TotalQuestions != 15)
+        {
+            throw new ArgumentException(
+                "TotalQuestions must be 15 for TCM diagnostic", 
+                nameof(TotalQuestions));
+        }
+    }
+    
+    /// <summary>
+    /// Get descriptive text for current phase progress
+    /// </summary>
+    private string GetPhaseProgressText()
+    {
+        var questionsInPhase = CurrentQuestion % 5 == 0 ? 5 : CurrentQuestion % 5;
+        var phaseQuestionNumber = CurrentPhase switch
+        {
+            1 => CurrentQuestion,
+            2 => CurrentQuestion - 5,
+            3 => CurrentQuestion - 10,
+            _ => CurrentQuestion
+        };
+        
+        return CurrentPhase switch
+        {
+            1 => $"{phaseQuestionNumber}/5 - Podstawowa ocena",
+            2 => $"{phaseQuestionNumber}/5 - Pogłębiona analiza", 
+            3 => $"{phaseQuestionNumber}/5 - Specjalistyczna diagnoza",
+            _ => $"{CurrentQuestion}/{TotalQuestions}"
+        };
+    }
+} 

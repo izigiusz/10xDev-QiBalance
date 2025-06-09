@@ -1,0 +1,555 @@
+/* QiBalance - TCM Diagnostic Components CSS */
+
+/* ===== PERFORMANCE OPTIMIZATIONS ===== */
+.diagnostic-card-container,
+.phase-indicator-container,
+.answer-buttons-container {
+    will-change: transform, opacity;
+    transform: translateZ(0); /* Force GPU acceleration */
+}
+
+.btn.answer-button {
+    will-change: transform, box-shadow;
+    transform: translate3d(0, 0, 0); /* GPU acceleration */
+}
+
+/* ===== ACCESSIBILITY - REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+    .diagnostic-card,
+    .phase-indicator,
+    .answer-button,
+    .progress-bar,
+    .session-info {
+        animation: none !important;
+        transition: none !important;
+    }
+    
+    .phase-transition-overlay {
+        transition: opacity 0.1s ease !important;
+    }
+    
+    .transition-content {
+        transition: none !important;
+        transform: none !important;
+    }
+}
+
+/* ===== HIGH CONTRAST MODE ===== */
+@media (prefers-contrast: high) {
+    .diagnostic-card {
+        border-width: 3px;
+        border-color: #000;
+    }
+    
+    .btn-primary {
+        background-color: #000;
+        border-color: #000;
+        color: #fff;
+    }
+    
+    .btn-outline-secondary {
+        border-color: #000;
+        color: #000;
+        border-width: 2px;
+    }
+    
+    .text-primary {
+        color: #000 !important;
+    }
+    
+    .progress-bar {
+        background-color: #000;
+    }
+}
+
+/* ===== PRINT STYLES ===== */
+@media print {
+    .keyboard-shortcuts-hint,
+    .answer-buttons-container,
+    .session-info {
+        display: none !important;
+    }
+    
+    .diagnostic-card {
+        break-inside: avoid;
+        box-shadow: none;
+        border: 2px solid #000;
+    }
+    
+    .phase-indicator {
+        background: #f8f9fa;
+        color: #000;
+    }
+}
+
+/* ===== DARK MODE SUPPORT ===== */
+@media (prefers-color-scheme: dark) {
+    .diagnostic-card {
+        background-color: #2d3748;
+        border-color: #4a5568;
+        color: #f7fafc;
+    }
+    
+    .phase-indicator {
+        background-color: #4a5568;
+        color: #f7fafc;
+    }
+    
+    .session-info {
+        background-color: #2d3748 !important;
+        color: #f7fafc;
+    }
+    
+    .keyboard-shortcuts-hint {
+        background-color: #2d3748 !important;
+        color: #f7fafc;
+        border: 1px solid #4a5568;
+    }
+    
+    .recommendations-text {
+        background-color: #2d3748;
+        color: #f7fafc;
+        border-left-color: #48bb78;
+    }
+}
+
+/* Base Styles */
+.diagnostic-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+}
+
+.diagnostic-card:hover {
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+}
+
+.diagnostic-card-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1.25rem;
+    border-bottom: none;
+}
+
+.diagnostic-card-body {
+    padding: 1.5rem;
+}
+
+.question-text {
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: #2d3748;
+    margin-bottom: 0;
+}
+
+/* Progress Bar Component */
+.diagnostic-progress-container {
+    margin-bottom: 2rem;
+}
+
+.progress-bar-wrapper {
+    position: relative;
+    background-color: #e2e8f0;
+    border-radius: 50px;
+    height: 12px;
+    overflow: hidden;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.progress-bar {
+    background: linear-gradient(90deg, #4ade80 0%, #22c55e 50%, #16a34a 100%);
+    height: 100%;
+    border-radius: 50px;
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-bar::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}
+
+.progress-text {
+    text-align: center;
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: #64748b;
+    font-weight: 500;
+}
+
+/* Phase Indicator Component */
+.phase-indicator {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: 10px;
+    margin-bottom: 1.5rem;
+    text-align: center;
+    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.3);
+    transform: translateY(0);
+    transition: all 0.3s ease;
+}
+
+.phase-indicator:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+}
+
+.phase-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.phase-description {
+    font-size: 0.9rem;
+    opacity: 0.9;
+    line-height: 1.4;
+    margin-bottom: 0;
+}
+
+/* Answer Buttons Component */
+.answer-buttons-container {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 1.5rem;
+}
+
+.answer-button {
+    flex: 1;
+    max-width: 200px;
+    padding: 0.875rem 1.5rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.answer-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+.answer-button:hover::before {
+    left: 100%;
+}
+
+.btn-yes {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+}
+
+.btn-yes:hover {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+}
+
+.btn-no {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+}
+
+.btn-no:hover {
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+}
+
+.answer-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.answer-button.selected {
+    transform: scale(0.98);
+    box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Error Display Component */
+.error-container {
+    background: linear-gradient(135deg, #fecaca 0%, #fca5a5 100%);
+    border: 1px solid #f87171;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.error-icon {
+    font-size: 3rem;
+    color: #dc2626;
+    margin-bottom: 1rem;
+}
+
+.error-title {
+    color: #991b1b;
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.error-message {
+    color: #7f1d1d;
+    margin-bottom: 1.5rem;
+    line-height: 1.5;
+}
+
+.retry-button {
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.retry-button:hover {
+    background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+}
+
+/* Session Info */
+.session-info {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 1.5rem;
+}
+
+.session-health-indicator .badge {
+    transition: all 0.3s ease;
+}
+
+.session-health-indicator .badge:hover {
+    transform: scale(1.05);
+}
+
+/* Keyboard Shortcuts Hint */
+.keyboard-shortcuts-hint {
+    transition: opacity 0.3s ease;
+}
+
+.keyboard-shortcuts-hint:hover {
+    opacity: 1 !important;
+}
+
+.keyboard-shortcuts-hint kbd {
+    background-color: #374151;
+    color: white;
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-family: monospace;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .diagnostic-card {
+        margin-bottom: 1rem;
+    }
+    
+    .diagnostic-card-header,
+    .diagnostic-card-body {
+        padding: 1rem;
+    }
+    
+    .answer-buttons-container {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    
+    .answer-button {
+        max-width: none;
+        width: 100%;
+    }
+    
+    .phase-indicator {
+        padding: 0.875rem 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .phase-title {
+        font-size: 1.1rem;
+    }
+    
+    .phase-description {
+        font-size: 0.85rem;
+    }
+    
+    .keyboard-shortcuts-hint {
+        display: none;
+    }
+    
+    .session-info {
+        font-size: 0.875rem;
+    }
+    
+    .session-info .row > * {
+        margin-bottom: 0.5rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .container-fluid {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    
+    .diagnostic-card-header,
+    .diagnostic-card-body {
+        padding: 0.875rem;
+    }
+    
+    .question-text {
+        font-size: 1rem;
+    }
+    
+    .answer-button {
+        padding: 0.75rem 1rem;
+        font-size: 1rem;
+    }
+    
+    .phase-title {
+        font-size: 1rem;
+    }
+}
+
+/* Focus States for Accessibility */
+.answer-button:focus-visible,
+.retry-button:focus-visible,
+.diagnostic-card:focus-visible {
+    outline: 3px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+/* Animation for Smooth Transitions */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.diagnostic-card,
+.phase-indicator,
+.answer-buttons-container {
+    animation: fadeInUp 0.5s ease-out;
+}
+
+/* Loading States */
+.loading-shimmer {
+    background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+/* Tooltip Styles */
+.tooltip-custom {
+    background-color: #1f2937;
+    color: white;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 1060;
+}
+
+/* Enhanced Visual Feedback */
+.answer-button.processing {
+    pointer-events: none;
+    position: relative;
+}
+
+.answer-button.processing::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border: 2px solid transparent;
+    border-top: 2px solid rgba(255, 255, 255, 0.8);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Recommendations Page Styles */
+.recommendations-text {
+    background-color: #f8f9fa;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    line-height: 1.6;
+    border-left: 4px solid #28a745;
+    margin-bottom: 1rem;
+}
+
+.recommendations-text h6 {
+    color: #495057;
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.recommendations-text ul {
+    margin-bottom: 0.5rem;
+    padding-left: 1.25rem;
+}
+
+.recommendations-text li {
+    margin-bottom: 0.25rem;
+    line-height: 1.5;
+}
+
+.recommendations-text strong {
+    color: #28a745;
+    font-weight: 600;
+} 

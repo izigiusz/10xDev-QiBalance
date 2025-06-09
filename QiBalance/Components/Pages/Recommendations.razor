@@ -1,0 +1,198 @@
+@page "/recommendations"
+@using QiBalance.Models.DTOs
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+@inject ILogger<Recommendations> Logger
+
+<PageTitle>Rekomendacje TCM - QiBalance</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-8 col-xl-6">
+            @if (isLoading)
+            {
+                <div class="text-center">
+                    <div class="spinner-border text-primary mb-3" role="status">
+                        <span class="visually-hidden">Ładowanie rekomendacji...</span>
+                    </div>
+                    <p class="text-muted">Przygotowywanie Twoich rekomendacji TCM...</p>
+                </div>
+            }
+            else if (recommendations != null)
+            {
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-primary text-white text-center py-3">
+                        <h4 class="mb-0">
+                            <i class="bi bi-heart-pulse me-2"></i>
+                            Twoja Diagnoza TCM
+                        </h4>
+                    </div>
+                    
+                    <div class="card-body p-4">
+                        <div class="mb-4">
+                            <h5 class="text-primary mb-3">
+                                <i class="bi bi-clipboard2-pulse me-2"></i>
+                                Zidentyfikowany Syndrom TCM
+                            </h5>
+                            <div class="alert alert-info">
+                                <strong>@recommendations.TcmSyndrome</strong>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <h5 class="text-success mb-3">
+                                <i class="bi bi-lightbulb me-2"></i>
+                                Rekomendacje Terapeutyczne
+                            </h5>
+                            <div class="recommendations-text">
+                                @((MarkupString)FormatRecommendationsText(recommendations.RecommendationText))
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex gap-2 justify-content-center mt-4">
+                            <button class="btn btn-primary" @onclick="StartNewDiagnosis">
+                                <i class="bi bi-arrow-repeat me-1"></i>
+                                Nowa Diagnoza
+                            </button>
+                            <button class="btn btn-outline-secondary" @onclick="GoHome">
+                                <i class="bi bi-house me-1"></i>
+                                Strona Główna
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="card border-warning">
+                    <div class="card-body text-center p-4">
+                        <i class="bi bi-exclamation-triangle text-warning" style="font-size: 3rem;"></i>
+                        <h5 class="mt-3 mb-3">Brak wyników diagnozy</h5>
+                        <p class="text-muted mb-4">
+                            Nie znaleziono wyników diagnozy. Przeprowadź diagnozę ponownie.
+                        </p>
+                        <button class="btn btn-primary" @onclick="StartNewDiagnosis">
+                            <i class="bi bi-play-circle me-1"></i>
+                            Rozpocznij Diagnozę
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .recommendations-text {
+        background-color: #f8f9fa;
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        line-height: 1.6;
+        border-left: 4px solid #28a745;
+    }
+    
+    .recommendations-text h6 {
+        color: #495057;
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .recommendations-text ul {
+        margin-bottom: 0.5rem;
+    }
+    
+    .recommendations-text li {
+        margin-bottom: 0.25rem;
+    }
+</style>
+
+@code {
+    private RecommendationResult? recommendations;
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadRecommendationsAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading recommendations page");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadRecommendationsAsync()
+    {
+        try
+        {
+            // Try to load from session storage
+            var recommendationsJson = await JSRuntime.InvokeAsync<string?>(
+                "sessionStorage.getItem", "currentRecommendations");
+            
+            if (!string.IsNullOrEmpty(recommendationsJson))
+            {
+                recommendations = System.Text.Json.JsonSerializer.Deserialize<RecommendationResult>(recommendationsJson);
+                
+                // Clear from session storage after loading
+                await JSRuntime.InvokeVoidAsync("sessionStorage.removeItem", "currentRecommendations");
+                
+                Logger.LogInformation("Recommendations loaded successfully");
+            }
+            else
+            {
+                Logger.LogWarning("No recommendations found in session storage");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Error loading recommendations from session storage");
+        }
+    }
+
+    private string FormatRecommendationsText(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return "Brak szczegółowych rekomendacji.";
+
+        // Basic formatting - convert newlines to HTML breaks
+        // and bold text in **text** format
+        var formatted = text.Replace("\n", "<br/>");
+        
+        // Simple bold formatting - replace **text** with <strong>text</strong>
+        while (formatted.Contains("**"))
+        {
+            var firstIndex = formatted.IndexOf("**");
+            if (firstIndex >= 0)
+            {
+                formatted = formatted.Remove(firstIndex, 2).Insert(firstIndex, "<strong>");
+                var secondIndex = formatted.IndexOf("**", firstIndex);
+                if (secondIndex >= 0)
+                {
+                    formatted = formatted.Remove(secondIndex, 2).Insert(secondIndex, "</strong>");
+                }
+                else
+                {
+                    break; // No matching closing **
+                }
+            }
+        }
+        
+        return formatted;
+    }
+
+    private void StartNewDiagnosis()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    private void GoHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+} 

@@ -1,0 +1,115 @@
+@* Yes/No Buttons Component - Provides accessible answer selection with keyboard support *@
+
+<div class="yes-no-buttons-container d-flex gap-3 justify-content-center">
+    <button type="button" 
+            class="btn btn-yes btn-success btn-lg flex-fill @(IsDisabled ? "disabled" : "")"
+            disabled="@IsDisabled"
+            @onclick="HandleYesClick"
+            @onkeydown="@(async (e) => await HandleKeyDown(e, true))"
+            aria-label="Odpowiedz TAK na pytanie diagnostyczne"
+            tabindex="0">
+        <i class="bi bi-check-circle-fill me-2"></i>
+        <span class="button-text">Tak</span>
+        @if (IsDisabled)
+        {
+            <span class="spinner-border spinner-border-sm ms-2" role="status" aria-hidden="true"></span>
+        }
+    </button>
+    
+    <button type="button" 
+            class="btn btn-no btn-danger btn-lg flex-fill @(IsDisabled ? "disabled" : "")"
+            disabled="@IsDisabled"
+            @onclick="HandleNoClick"
+            @onkeydown="@(async (e) => await HandleKeyDown(e, false))"
+            aria-label="Odpowiedz NIE na pytanie diagnostyczne"
+            tabindex="0">
+        <i class="bi bi-x-circle-fill me-2"></i>
+        <span class="button-text">Nie</span>
+        @if (IsDisabled)
+        {
+            <span class="spinner-border spinner-border-sm ms-2" role="status" aria-hidden="true"></span>
+        }
+    </button>
+</div>
+
+<link href="~/css/diagnostic-components.css" rel="stylesheet" />
+
+@code {
+    /// <summary>
+    /// Whether buttons are disabled (e.g., during loading)
+    /// </summary>
+    [Parameter]
+    public bool IsDisabled { get; set; } = false;
+    
+    /// <summary>
+    /// Event callback when user clicks an answer button
+    /// </summary>
+    [Parameter]
+    public EventCallback<bool> OnAnswerClick { get; set; }
+    
+    private DateTime lastClickTime = DateTime.MinValue;
+    private const int DebounceMilliseconds = 500;
+    
+    protected override void OnParametersSet()
+    {
+        // Reset click debounce when parameters change
+        lastClickTime = DateTime.MinValue;
+    }
+    
+    /// <summary>
+    /// Handle YES button click with debouncing
+    /// </summary>
+    private async Task HandleYesClick()
+    {
+        await HandleAnswerClick(true);
+    }
+    
+    /// <summary>
+    /// Handle NO button click with debouncing
+    /// </summary>
+    private async Task HandleNoClick()
+    {
+        await HandleAnswerClick(false);
+    }
+    
+    /// <summary>
+    /// Generic answer click handler with debouncing logic
+    /// </summary>
+    private async Task HandleAnswerClick(bool answer)
+    {
+        if (IsDisabled)
+        {
+            return;
+        }
+        
+        // Implement debouncing to prevent double-clicks
+        var now = DateTime.UtcNow;
+        if ((now - lastClickTime).TotalMilliseconds < DebounceMilliseconds)
+        {
+            return;
+        }
+        lastClickTime = now;
+        
+        if (OnAnswerClick.HasDelegate)
+        {
+            await OnAnswerClick.InvokeAsync(answer);
+        }
+    }
+    
+    /// <summary>
+    /// Handle keyboard navigation (Enter, Space)
+    /// </summary>
+    private async Task HandleKeyDown(KeyboardEventArgs e, bool answer)
+    {
+        if (IsDisabled)
+        {
+            return;
+        }
+        
+        // Handle Enter and Space keys
+        if (e.Key == "Enter" || e.Key == " ")
+        {
+            await HandleAnswerClick(answer);
+        }
+    }
+} 

@@ -1,0 +1,494 @@
+@page "/diagnostic"
+@using QiBalance.Models.DTOs
+@using QiBalance.Components.ViewModels
+@inject IJSRuntime JSRuntime
+@inject IDiagnosticService DiagnosticService
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+@inject ILogger<Diagnostic> Logger
+@implements IDisposable
+
+<PageTitle>Diagnoza TCM - QiBalance</PageTitle>
+
+<!-- Enhanced keyboard shortcuts info -->
+<div class="keyboard-shortcuts-hint position-fixed top-0 end-0 m-3 p-2 bg-light rounded shadow-sm" 
+     style="z-index: 1050; font-size: 0.8rem; opacity: 0.8;">
+    <small class="text-muted">
+        <i class="bi bi-keyboard"></i> Skróty: <kbd>T</kbd> - Tak, <kbd>N</kbd> - Nie, <kbd>Spacja</kbd> - Potwierdź
+    </small>
+</div>
+
+<div class="container-fluid py-4" tabindex="-1" @ref="mainContainer">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-8 col-xl-6">
+            @if (viewModel.IsLoading)
+            {
+                <div class="text-center">
+                    <div class="spinner-border text-primary mb-3" role="status" aria-label="Loading diagnostic">
+                        <span class="visually-hidden">Ładowanie diagnozy...</span>
+                    </div>
+                    <p class="text-muted">@viewModel.LoadingMessage</p>
+                </div>
+            }
+            else if (viewModel.HasError)
+            {
+                <ErrorDisplayComponent 
+                    ErrorMessage="@viewModel.ErrorMessage"
+                    OnRetry="@RetryDiagnostic" />
+            }
+            else if (viewModel.CurrentQuestion != null)
+            {
+                <!-- Enhanced Progress Bar with phase tooltip -->
+                <DiagnosticProgressBarComponent 
+                    CurrentQuestion="@viewModel.QuestionNumber"
+                    TotalQuestions="@viewModel.TotalQuestions"
+                    CurrentPhase="@viewModel.CurrentPhase" />
+
+                <!-- Enhanced Phase Indicator with animation -->
+                <div class="phase-indicator-container" @key="@($"phase-{viewModel.CurrentPhase}")">
+                    <PhaseIndicatorComponent 
+                        CurrentPhase="@viewModel.CurrentPhase" 
+                        PhaseDescription="@viewModel.PhaseDescription" />
+                </div>
+
+                <!-- Enhanced Question Card with smooth transitions -->
+                <div class="question-card-container" @key="@($"question-{viewModel.QuestionNumber}")">
+                    <DiagnosticCardComponent 
+                        CurrentQuestion="@viewModel.CurrentQuestion"
+                        IsLoading="@viewModel.IsProcessingAnswer"
+                        OnAnswerSelected="@HandleAnswerAsync" />
+                </div>
+
+                <!-- Enhanced session info with accessibility -->
+                <div class="session-info mt-4 p-3 bg-light rounded" role="complementary" aria-label="Informacje o sesji">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-auto">
+                            <small class="text-muted">
+                                <i class="bi bi-clock" aria-hidden="true"></i>
+                                <span class="visually-hidden">Czas sesji:</span>
+                                Sesja: @viewModel.SessionTimeRemaining
+                            </small>
+                        </div>
+                        <div class="col-auto">
+                            <small class="text-muted">
+                                <i class="bi bi-person-check" aria-hidden="true"></i>
+                                <span class="visually-hidden">Użytkownik:</span>
+                                @viewModel.UserEmail
+                            </small>
+                        </div>
+                        <div class="col">
+                            <div class="session-health-indicator float-end" 
+                                 title="@GetSessionHealthTooltip()" 
+                                 aria-label="@GetSessionHealthTooltip()">
+                                <span class="badge bg-@GetSessionHealthColor()">
+                                    <i class="bi bi-@GetSessionHealthIcon()"></i>
+                                    @GetSessionHealthText()
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DiagnosticViewModel viewModel = new();
+    private Timer? sessionValidationTimer;
+    private Timer? autoSaveTimer;
+    private ElementReference mainContainer;
+    private bool isDisposed = false;
+    private string? lastFocusedElement;
+
+    // Enhanced keyboard shortcuts
+    private Dictionary<string, Func<Task>> keyboardShortcuts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        InitializeKeyboardShortcuts();
+        await InitializeDiagnosticAsync();
+        StartSessionValidation();
+        StartAutoSave();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("setupKeyboardShortcuts", DotNetObjectReference.Create(this));
+            await JSRuntime.InvokeVoidAsync("setupSmoothScrolling");
+            await JSRuntime.InvokeVoidAsync("setupAccessibilityEnhancements");
+        }
+        
+        // Restore focus after state changes
+        if (!string.IsNullOrEmpty(lastFocusedElement))
+        {
+            await JSRuntime.InvokeVoidAsync("restoreFocus", lastFocusedElement);
+            lastFocusedElement = null;
+        }
+    }
+
+    private void InitializeKeyboardShortcuts()
+    {
+        keyboardShortcuts = new Dictionary<string, Func<Task>>
+        {
+            { "KeyT", () => HandleAnswerAsync(true) },
+            { "KeyN", () => HandleAnswerAsync(false) },
+            { "Space", () => ConfirmCurrentAnswer() },
+            { "Enter", () => ConfirmCurrentAnswer() },
+            { "Escape", () => ShowExitConfirmation() }
+        };
+    }
+
+    [JSInvokable]
+    public async Task HandleKeyboardShortcut(string key)
+    {
+        if (keyboardShortcuts.ContainsKey(key) && !viewModel.IsProcessingAnswer)
+        {
+            await keyboardShortcuts[key].Invoke();
+        }
+    }
+
+    private async Task ConfirmCurrentAnswer()
+    {
+        if (viewModel.CurrentAnswer.HasValue && !viewModel.IsProcessingAnswer)
+        {
+            await HandleAnswerAsync(viewModel.CurrentAnswer.Value);
+        }
+    }
+
+    private async Task ShowExitConfirmation()
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            "Czy na pewno chcesz przerwać diagnozę? Twój postęp zostanie utracony.");
+        
+        if (confirmed)
+        {
+            Navigation.NavigateTo("/");
+        }
+    }
+
+    // Enhanced session health indicators
+    private string GetSessionHealthTooltip()
+    {
+        var remaining = TimeSpan.Parse(viewModel.SessionTimeRemaining);
+        return remaining.TotalMinutes switch
+        {
+            > 20 => "Sesja aktywna - dużo czasu pozostało",
+            > 10 => "Sesja aktywna - średnio czasu pozostało", 
+            > 5 => "Uwaga - mało czasu pozostało",
+            _ => "Krytycznie - sesja wkrótce wygaśnie"
+        };
+    }
+
+    private string GetSessionHealthColor()
+    {
+        var remaining = TimeSpan.Parse(viewModel.SessionTimeRemaining);
+        return remaining.TotalMinutes switch
+        {
+            > 20 => "success",
+            > 10 => "info",
+            > 5 => "warning",
+            _ => "danger"
+        };
+    }
+
+    private string GetSessionHealthIcon()
+    {
+        var remaining = TimeSpan.Parse(viewModel.SessionTimeRemaining);
+        return remaining.TotalMinutes switch
+        {
+            > 20 => "shield-check",
+            > 10 => "shield",
+            > 5 => "shield-exclamation", 
+            _ => "shield-x"
+        };
+    }
+
+    private string GetSessionHealthText()
+    {
+        var remaining = TimeSpan.Parse(viewModel.SessionTimeRemaining);
+        return remaining.TotalMinutes switch
+        {
+            > 20 => "Stabilna",
+            > 10 => "Aktywna",
+            > 5 => "Ostrzeżenie",
+            _ => "Krytyczna"
+        };
+    }
+
+    private async Task InitializeDiagnosticAsync()
+    {
+        try
+        {
+            viewModel.IsLoading = true;
+            viewModel.LoadingMessage = "Przygotowywanie diagnozy...";
+            StateHasChanged();
+
+            // Get user email with enhanced error handling
+            try
+            {
+                viewModel.UserEmail = await AuthService.GetCurrentUserEmailAsync();
+                if (string.IsNullOrEmpty(viewModel.UserEmail))
+                {
+                    throw new InvalidOperationException("Nie można pobrać informacji o użytkowniku");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to get current user email");
+                viewModel.SetError("Błąd uwierzytelniania. Zaloguj się ponownie.");
+                return;
+            }
+
+            viewModel.LoadingMessage = "Pobieranie pytań diagnostycznych...";
+            StateHasChanged();
+
+            // Load first question
+            await LoadNextQuestionAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error initializing diagnostic");
+            viewModel.SetError("Błąd inicjalizacji diagnozy. Spróbuj ponownie.");
+        }
+        finally
+        {
+            viewModel.IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadNextQuestionAsync()
+    {
+        try
+        {
+            var nextQuestion = await DiagnosticService.GetNextQuestionAsync(
+                viewModel.UserEmail!, viewModel.QuestionNumber);
+
+            if (nextQuestion != null)
+            {
+                viewModel.SetCurrentQuestion(nextQuestion, viewModel.QuestionNumber);
+                Logger.LogInformation("Loaded question {QuestionNumber}: {QuestionText}", 
+                    viewModel.QuestionNumber, nextQuestion.QuestionText);
+            }
+            else
+            {
+                Logger.LogWarning("No question received for question number {QuestionNumber}", 
+                    viewModel.QuestionNumber);
+                viewModel.SetError("Nie można załadować kolejnego pytania.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading question {QuestionNumber}", viewModel.QuestionNumber);
+            viewModel.SetError($"Błąd podczas ładowania pytania {viewModel.QuestionNumber}. Spróbuj ponownie.");
+        }
+    }
+
+    private async Task HandleAnswerAsync(bool answer)
+    {
+        if (viewModel.IsProcessingAnswer || viewModel.CurrentQuestion == null)
+            return;
+
+        try
+        {
+            // Store current focus for restoration
+            lastFocusedElement = await JSRuntime.InvokeAsync<string>("getCurrentFocusedElementId");
+            
+            viewModel.SetProcessingAnswer(true, answer);
+            StateHasChanged();
+
+            Logger.LogInformation("Processing answer for question {QuestionNumber}: {Answer}", 
+                viewModel.QuestionNumber, answer);
+
+            // Add haptic feedback for mobile devices
+            await JSRuntime.InvokeVoidAsync("triggerHapticFeedback", "light");
+
+            // Submit answer to API
+            var response = await DiagnosticService.SubmitAnswerAsync(
+                viewModel.UserEmail!, viewModel.QuestionNumber, answer);
+
+            await HandleDiagnosticResponse(response);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error submitting answer for question {QuestionNumber}", 
+                viewModel.QuestionNumber);
+            viewModel.SetError("Błąd podczas zapisywania odpowiedzi. Spróbuj ponownie.");
+        }
+        finally
+        {
+            viewModel.SetProcessingAnswer(false);
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleDiagnosticResponse(DiagnosticResponse response)
+    {
+        if (!response.HasMoreQuestions && response.Recommendations != null)
+        {
+            Logger.LogInformation("Diagnostic completed. Storing recommendations and navigating to results.");
+            
+            await StoreRecommendationsAsync(response.Recommendations);
+            
+            // Add completion celebration
+            await JSRuntime.InvokeVoidAsync("showCompletionCelebration");
+            await JSRuntime.InvokeVoidAsync("triggerHapticFeedback", "success");
+            
+            // Smooth transition to results
+            await Task.Delay(1500);
+            Navigation.NavigateTo("/recommendations");
+        }
+        else if (response.HasMoreQuestions && response.NextQuestion != null)
+        {
+            // Check for phase transition
+            var newPhase = GetPhaseFromQuestionNumber(viewModel.QuestionNumber + 1);
+            var isPhaseTransition = newPhase != viewModel.CurrentPhase;
+            
+            if (isPhaseTransition)
+            {
+                await ShowPhaseTransitionAsync(viewModel.CurrentPhase, newPhase);
+            }
+            
+            viewModel.SetCurrentQuestion(response.NextQuestion, viewModel.QuestionNumber + 1);
+            
+            // Smooth scroll to question
+            await JSRuntime.InvokeVoidAsync("smoothScrollToElement", "question-card-container");
+            
+            Logger.LogInformation("Loaded next question {QuestionNumber}: {QuestionText}", 
+                viewModel.QuestionNumber, response.NextQuestion.QuestionText);
+        }
+        else
+        {
+            Logger.LogWarning("Unexpected response state: not completed but no next question");
+            viewModel.SetError("Nieoczekiwany stan diagnozy. Skontaktuj się z obsługą.");
+        }
+    }
+
+    private async Task ShowPhaseTransitionAsync(int fromPhase, int toPhase)
+    {
+        var phaseNames = new[] { "", "Obserwacja", "Palpacja", "Analiza" };
+        var message = $"Przechodzimy do fazy {toPhase}: {phaseNames[toPhase]}";
+        
+        await JSRuntime.InvokeVoidAsync("showPhaseTransition", message);
+        await JSRuntime.InvokeVoidAsync("triggerHapticFeedback", "medium");
+        
+        Logger.LogInformation("Phase transition from {FromPhase} to {ToPhase}", fromPhase, toPhase);
+        
+        // Wait for transition animation
+        await Task.Delay(2000);
+    }
+
+    private async Task StoreRecommendationsAsync(RecommendationResult recommendations)
+    {
+        try
+        {
+            var recommendationsJson = System.Text.Json.JsonSerializer.Serialize(recommendations);
+            await JSRuntime.InvokeVoidAsync("sessionStorage.setItem", "currentRecommendations", recommendationsJson);
+            Logger.LogInformation("Recommendations stored successfully in session storage");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to store recommendations in session storage");
+        }
+    }
+
+    private int GetPhaseFromQuestionNumber(int questionNumber) => ((questionNumber - 1) / 5) + 1;
+
+    private void StartSessionValidation()
+    {
+        sessionValidationTimer = new Timer(async _ => await ValidateSessionAsync(), 
+            null, TimeSpan.Zero, TimeSpan.FromSeconds(30));
+    }
+
+    private void StartAutoSave()
+    {
+        autoSaveTimer = new Timer(async _ => await AutoSaveProgressAsync(), 
+            null, TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(2));
+    }
+
+    private async Task AutoSaveProgressAsync()
+    {
+        if (isDisposed || viewModel.IsLoading) return;
+
+        try
+        {
+            var progress = new DiagnosticProgress
+            {
+                QuestionNumber = viewModel.QuestionNumber,
+                CurrentPhase = viewModel.CurrentPhase,
+                UserEmail = viewModel.UserEmail!,
+                LastActivity = DateTime.UtcNow
+            };
+
+            var progressJson = System.Text.Json.JsonSerializer.Serialize(progress);
+            await JSRuntime.InvokeVoidAsync("localStorage.setItem", "diagnosticProgress", progressJson);
+            Logger.LogDebug("Auto-saved diagnostic progress for question {QuestionNumber}", viewModel.QuestionNumber);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to auto-save diagnostic progress");
+        }
+    }
+
+    private async Task ValidateSessionAsync()
+    {
+        if (isDisposed || viewModel.IsLoading) return;
+
+        try
+        {
+            var isValid = await DiagnosticService.ValidateSessionAsync(viewModel.UserEmail!);
+            if (!isValid)
+            {
+                Logger.LogWarning("Session validation failed for user {UserEmail}", viewModel.UserEmail);
+                await InvokeAsync(() =>
+                {
+                    viewModel.SetError("Sesja wygasła. Zostaniesz przekierowany na stronę główną.");
+                    StateHasChanged();
+                });
+
+                await Task.Delay(3000);
+                Navigation.NavigateTo("/");
+            }
+            else
+            {
+                // Update session time remaining
+                var sessionInfo = await DiagnosticService.GetSessionInfoAsync(viewModel.UserEmail!);
+                if (sessionInfo != null)
+                {
+                    await InvokeAsync(() =>
+                    {
+                        viewModel.UpdateSessionInfo(sessionInfo.TimeRemaining.ToString(@"mm\:ss"));
+                        StateHasChanged();
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error during session validation");
+            // Don't show error to user for session validation failures
+        }
+    }
+
+    private async Task RetryDiagnostic()
+    {
+        viewModel.ClearError();
+        await InitializeDiagnosticAsync();
+    }
+
+    public void Dispose()
+    {
+        if (!isDisposed)
+        {
+            sessionValidationTimer?.Dispose();
+            autoSaveTimer?.Dispose();
+            isDisposed = true;
+        }
+    }
+}
+
+ 
+ 
