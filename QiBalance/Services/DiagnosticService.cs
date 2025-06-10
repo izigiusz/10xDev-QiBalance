@@ -7,19 +7,28 @@ namespace QiBalance.Services
     /// <summary>
     /// Interface for diagnostic service with 3-phase approach
     /// Manages diagnostic sessions with AI integration and session caching
+    /// Supports both authenticated and anonymous users
     /// </summary>
     public interface IDiagnosticService
     {
+        // Core methods for both authenticated and anonymous users
         Task<DiagnosticSession> StartSessionAsync(string? initialSymptoms, string? userId = null);
         Task<DiagnosticResponse> SubmitAnswerAsync(Guid sessionId, string questionId, bool answer, string? userId = null);
         Task<bool> IsSessionValidAsync(Guid sessionId);
         Task ClearExpiredSessionsAsync();
         
-        // Additional methods for enhanced diagnostic flow
+        // Methods for authenticated users (email-based)
         Task<DiagnosticQuestion?> GetNextQuestionAsync(string userEmail, int questionNumber);
         Task<DiagnosticResponse> SubmitAnswerAsync(string userEmail, int questionNumber, bool answer);
         Task<bool> ValidateSessionAsync(string userEmail);
         Task<DiagnosticSessionInfo?> GetSessionInfoAsync(string userEmail);
+        
+        // New methods for anonymous users (session-based)
+        Task<DiagnosticSession> StartAnonymousSessionAsync(string? initialSymptoms);
+        Task<DiagnosticQuestion?> GetNextQuestionBySessionAsync(Guid sessionId, int questionNumber);
+        Task<DiagnosticResponse> SubmitAnswerBySessionAsync(Guid sessionId, int questionNumber, bool answer);
+        Task<bool> ValidateSessionByIdAsync(Guid sessionId);
+        Task<DiagnosticSessionInfo?> GetSessionInfoByIdAsync(Guid sessionId);
     }
 
     /// <summary>
@@ -53,12 +62,13 @@ namespace QiBalance.Services
         /// <summary>
         /// Start new diagnostic session with Phase 1 questions
         /// Generates 5 basic questions based on initial symptoms
+        /// Supports both authenticated and anonymous users
         /// </summary>
         public async Task<DiagnosticSession> StartSessionAsync(string? initialSymptoms, string? userId = null)
         {
             try
             {
-                // Validate input
+                // Validate input - userId is optional for anonymous users
                 _validationService.ValidateSymptoms(initialSymptoms);
                 if (!string.IsNullOrEmpty(userId))
                 {
@@ -70,7 +80,7 @@ namespace QiBalance.Services
                 // Generate Phase 1 questions (5 basic questions)
                 var phase1 = await _openAIService.GeneratePhaseQuestionsAsync(1, initialSymptoms, new List<DiagnosticAnswer>());
 
-                // Create new session
+                // Create new session - supports both authenticated and anonymous users
                 var session = new DiagnosticSession
                 {
                     SessionId = Guid.NewGuid(),
@@ -81,28 +91,29 @@ namespace QiBalance.Services
                     InitialSymptoms = initialSymptoms,
                     CreatedAt = DateTime.UtcNow,
                     ExpiresAt = DateTime.UtcNow.AddHours(SessionTimeoutHours),
-                    UserId = userId,
+                    UserId = userId, // Can be null for anonymous users
                     Answers = new List<DiagnosticAnswer>()
                 };
 
-                // Cache session by both SessionId and UserId
+                // Cache session by SessionId (primary) and optionally by UserId for authenticated users
                 var cacheKey = GetSessionCacheKey(session.SessionId);
                 _cache.Set(cacheKey, session, TimeSpan.FromHours(SessionTimeoutHours));
                 
+                // Only cache by userId if user is authenticated
                 if (!string.IsNullOrEmpty(userId))
                 {
                     var userCacheKey = GetUserSessionCacheKey(userId);
                     _cache.Set(userCacheKey, session, TimeSpan.FromHours(SessionTimeoutHours));
                 }
 
-                _logger.LogInformation("Diagnostic session created: {SessionId}, Phase: {Phase}, Questions: {QuestionCount}", 
-                    session.SessionId, session.CurrentPhase, session.Questions.Count);
+                _logger.LogInformation("Diagnostic session created: {SessionId}, Phase: {Phase}, Questions: {QuestionCount}, Anonymous: {IsAnonymous}", 
+                    session.SessionId, session.CurrentPhase, session.Questions.Count, string.IsNullOrEmpty(userId));
 
                 return session;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error starting diagnostic session for user: {UserId}", userId);
+                _logger.LogError(ex, "Error starting diagnostic session for user: {UserId}", userId ?? "anonymous");
                 throw;
             }
         }
@@ -619,6 +630,134 @@ namespace QiBalance.Services
             {
                 _logger.LogError(ex, "Error updating user session in cache: {UserEmail}", userEmail);
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// Start anonymous diagnostic session (without user authentication)
+        /// Returns session ID that can be used to continue diagnostic flow
+        /// </summary>
+        public async Task<DiagnosticSession> StartAnonymousSessionAsync(string? initialSymptoms)
+        {
+            return await StartSessionAsync(initialSymptoms, userId: null);
+        }
+
+        /// <summary>
+        /// Get next question by session ID (for anonymous users)
+        /// </summary>
+        public async Task<DiagnosticQuestion?> GetNextQuestionBySessionAsync(Guid sessionId, int questionNumber)
+        {
+            try
+            {
+                _validationService.ValidateSessionId(sessionId);
+                
+                var session = await GetSessionFromCacheAsync(sessionId);
+                if (session == null)
+                {
+                    _logger.LogWarning("Session not found: {SessionId}", sessionId);
+                    return null;
+                }
+
+                // Handle phase transitions if needed
+                await HandlePhaseTransitionAsync(session);
+
+                // Return question by number
+                if (questionNumber > 0 && questionNumber <= session.Questions.Count)
+                {
+                    return session.Questions[questionNumber - 1];
+                }
+
+                _logger.LogWarning("Question number {QuestionNumber} not found in session {SessionId}", questionNumber, sessionId);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting question for session: {SessionId}, Question: {QuestionNumber}", sessionId, questionNumber);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Submit answer using session ID (for anonymous users)
+        /// </summary>
+        public async Task<DiagnosticResponse> SubmitAnswerBySessionAsync(Guid sessionId, int questionNumber, bool answer)
+        {
+            try
+            {
+                _validationService.ValidateSessionId(sessionId);
+                
+                var session = await GetSessionFromCacheAsync(sessionId);
+                if (session == null)
+                {
+                    throw new InvalidOperationException("Sesja diagnostyczna wygasła lub nie została znaleziona");
+                }
+
+                // Find question by number
+                if (questionNumber <= 0 || questionNumber > session.Questions.Count)
+                {
+                    throw new InvalidOperationException($"Nieprawidłowy numer pytania: {questionNumber}");
+                }
+
+                var question = session.Questions[questionNumber - 1];
+                
+                // Use existing SubmitAnswerAsync method
+                return await SubmitAnswerAsync(sessionId, question.Id, answer, userId: null);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error submitting answer for session: {SessionId}, Question: {QuestionNumber}", sessionId, questionNumber);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Validate session by ID
+        /// </summary>
+        public async Task<bool> ValidateSessionByIdAsync(Guid sessionId)
+        {
+            try
+            {
+                _validationService.ValidateSessionId(sessionId);
+                
+                var session = await GetSessionFromCacheAsync(sessionId);
+                return session != null && session.ExpiresAt > DateTime.UtcNow;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating session by ID: {SessionId}", sessionId);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Get session information by ID
+        /// </summary>
+        public async Task<DiagnosticSessionInfo?> GetSessionInfoByIdAsync(Guid sessionId)
+        {
+            try
+            {
+                _validationService.ValidateSessionId(sessionId);
+                
+                var session = await GetSessionFromCacheAsync(sessionId);
+                if (session == null)
+                {
+                    return null;
+                }
+
+                return new DiagnosticSessionInfo
+                {
+                    SessionId = session.SessionId,
+                    CurrentQuestion = session.CurrentQuestion,
+                    TotalQuestions = session.TotalQuestions,
+                    CurrentPhase = session.CurrentPhase,
+                    TimeRemaining = session.ExpiresAt - DateTime.UtcNow,
+                    LastActivity = session.Answers.LastOrDefault()?.AnsweredAt ?? session.CreatedAt
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting session info by ID: {SessionId}", sessionId);
+                return null;
             }
         }
     }

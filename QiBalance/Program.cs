@@ -35,7 +35,7 @@ namespace QiBalance
             }
             
             builder.Services.AddKernel()
-                .AddOpenAIChatCompletion("gpt-4", openAIKey);
+                .AddOpenAIChatCompletion("gpt-4o-mini", openAIKey);
             
             builder.Services.AddScoped<IOpenAIService, OpenAIService>();
             builder.Services.AddScoped<IDiagnosticService, DiagnosticService>();

@@ -1,4 +1,5 @@
 @page "/diagnostic"
+@rendermode InteractiveServer
 @using QiBalance.Models.DTOs
 @using QiBalance.Components.ViewModels
 @inject IJSRuntime JSRuntime
@@ -21,6 +22,36 @@
 <div class="container-fluid py-4" tabindex="-1" @ref="mainContainer">
     <div class="row justify-content-center">
         <div class="col-12 col-lg-8 col-xl-6">
+            <div class="row">
+                <div class="col-12">
+                    <h2 class="text-center mb-4">
+                        <i class="bi bi-clipboard-heart me-2"></i>
+                        Diagnoza TCM
+                    </h2>
+                    
+                    @if (viewModel.IsAnonymous)
+                    {
+                        <div class="alert alert-info d-flex align-items-center mb-4" role="alert">
+                            <i class="bi bi-info-circle-fill me-2"></i>
+                            <div>
+                                <strong>Tryb anonimowy:</strong> Przeprowadzasz diagnozę bez logowania. 
+                                Otrzymasz rekomendacje, ale nie będą one zapisane w historii. 
+                                <a href="/login" class="alert-link">Zaloguj się</a> aby zapisać wyniki.
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-success d-flex align-items-center mb-4" role="alert">
+                            <i class="bi bi-person-check-fill me-2"></i>
+                            <div>
+                                <strong>Zalogowany jako:</strong> @viewModel.UserEmail
+                                <br>Twoje rekomendacje zostaną automatycznie zapisane.
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
             @if (viewModel.IsLoading)
             {
                 <div class="text-center">
@@ -172,7 +203,7 @@
     // Enhanced session health indicators
     private string GetSessionHealthTooltip()
     {
-        var remaining = TimeSpan.Parse(viewModel.SessionTimeRemaining);
+        var remaining = TimeSpan.Parse("00:" + viewModel.SessionTimeRemaining);
         return remaining.TotalMinutes switch
         {
             > 20 => "Sesja aktywna - dużo czasu pozostało",
@@ -184,7 +215,7 @@
 
     private string GetSessionHealthColor()
     {
-        var remaining = TimeSpan.Parse(viewModel.SessionTimeRemaining);
+        var remaining = TimeSpan.Parse("00:" + viewModel.SessionTimeRemaining);
         return remaining.TotalMinutes switch
         {
             > 20 => "success",
@@ -196,7 +227,7 @@
 
     private string GetSessionHealthIcon()
     {
-        var remaining = TimeSpan.Parse(viewModel.SessionTimeRemaining);
+        var remaining = TimeSpan.Parse("00:" + viewModel.SessionTimeRemaining);
         return remaining.TotalMinutes switch
         {
             > 20 => "shield-check",
@@ -208,7 +239,7 @@
 
     private string GetSessionHealthText()
     {
-        var remaining = TimeSpan.Parse(viewModel.SessionTimeRemaining);
+        var remaining = TimeSpan.Parse("00:" + viewModel.SessionTimeRemaining);
         return remaining.TotalMinutes switch
         {
             > 20 => "Stabilna",
@@ -226,27 +257,38 @@
             viewModel.LoadingMessage = "Przygotowywanie diagnozy...";
             StateHasChanged();
 
-            // Get user email with enhanced error handling
-            try
+            // Try to get user email - if null, proceed as anonymous user
+            var userEmail = await AuthService.GetCurrentUserEmailAsync();
+            
+            if (!string.IsNullOrEmpty(userEmail))
             {
-                viewModel.UserEmail = await AuthService.GetCurrentUserEmailAsync();
-                if (string.IsNullOrEmpty(viewModel.UserEmail))
+                // Authenticated user flow
+                viewModel.InitializeForUser(userEmail);
+                viewModel.LoadingMessage = "Pobieranie pytań diagnostycznych...";
+                StateHasChanged();
+                
+                Logger.LogInformation("Starting diagnostic for authenticated user: {UserEmail}", userEmail);
+                
+                // Load first question for authenticated user
+                var firstQuestion = await DiagnosticService.GetNextQuestionAsync(userEmail, 1);
+                if (firstQuestion != null)
                 {
-                    throw new InvalidOperationException("Nie można pobrać informacji o użytkowniku");
+                    viewModel.SetCurrentQuestion(firstQuestion, 1);
+                }
+                else
+                {
+                    throw new InvalidOperationException("Nie udało się pobrać pierwszego pytania");
                 }
             }
-            catch (Exception ex)
+            else
             {
-                Logger.LogError(ex, "Failed to get current user email");
-                viewModel.SetError("Błąd uwierzytelniania. Zaloguj się ponownie.");
-                return;
+                // Anonymous user flow
+                viewModel.LoadingMessage = "Rozpoczynanie diagnozy anonimowej...";
+                StateHasChanged();
+                
+                Logger.LogInformation("Starting diagnostic for anonymous user");
+                await StartAnonymousSessionAsync();
             }
-
-            viewModel.LoadingMessage = "Pobieranie pytań diagnostycznych...";
-            StateHasChanged();
-
-            // Load first question
-            await LoadNextQuestionAsync();
         }
         catch (Exception ex)
         {
@@ -260,30 +302,30 @@
         }
     }
 
-    private async Task LoadNextQuestionAsync()
+    private async Task StartAnonymousSessionAsync()
     {
         try
         {
-            var nextQuestion = await DiagnosticService.GetNextQuestionAsync(
-                viewModel.UserEmail!, viewModel.QuestionNumber);
-
-            if (nextQuestion != null)
+            // Start anonymous session with empty symptoms (can be enhanced later)
+            var session = await DiagnosticService.StartAnonymousSessionAsync(initialSymptoms: "");
+            
+            viewModel.InitializeForAnonymous(session.SessionId);
+            
+            // Get first question
+            if (session.Questions.Any())
             {
-                viewModel.SetCurrentQuestion(nextQuestion, viewModel.QuestionNumber);
-                Logger.LogInformation("Loaded question {QuestionNumber}: {QuestionText}", 
-                    viewModel.QuestionNumber, nextQuestion.QuestionText);
+                viewModel.SetCurrentQuestion(session.Questions.First(), 1);
+                Logger.LogInformation("Anonymous session started: {SessionId}, First question loaded", session.SessionId);
             }
             else
             {
-                Logger.LogWarning("No question received for question number {QuestionNumber}", 
-                    viewModel.QuestionNumber);
-                viewModel.SetError("Nie można załadować kolejnego pytania.");
+                throw new InvalidOperationException("Nie udało się wygenerować pytań diagnostycznych");
             }
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error loading question {QuestionNumber}", viewModel.QuestionNumber);
-            viewModel.SetError($"Błąd podczas ładowania pytania {viewModel.QuestionNumber}. Spróbuj ponownie.");
+            Logger.LogError(ex, "Error starting anonymous diagnostic session");
+            viewModel.SetError("Błąd rozpoczynania diagnozy. Spróbuj ponownie.");
         }
     }
 
@@ -300,15 +342,30 @@
             viewModel.SetProcessingAnswer(true, answer);
             StateHasChanged();
 
-            Logger.LogInformation("Processing answer for question {QuestionNumber}: {Answer}", 
-                viewModel.QuestionNumber, answer);
+            Logger.LogInformation("Processing answer for question {QuestionNumber}: {Answer}, Anonymous: {IsAnonymous}", 
+                viewModel.QuestionNumber, answer, viewModel.IsAnonymous);
 
             // Add haptic feedback for mobile devices
             await JSRuntime.InvokeVoidAsync("triggerHapticFeedback", "light");
 
-            // Submit answer to API
-            var response = await DiagnosticService.SubmitAnswerAsync(
-                viewModel.UserEmail!, viewModel.QuestionNumber, answer);
+            DiagnosticResponse response;
+            
+            if (viewModel.IsAnonymous && viewModel.SessionId.HasValue)
+            {
+                // Anonymous user flow - use session-based methods
+                response = await DiagnosticService.SubmitAnswerBySessionAsync(
+                    viewModel.SessionId.Value, viewModel.QuestionNumber, answer);
+            }
+            else if (!viewModel.IsAnonymous && !string.IsNullOrEmpty(viewModel.UserEmail))
+            {
+                // Authenticated user flow - use email-based methods  
+                response = await DiagnosticService.SubmitAnswerAsync(
+                    viewModel.UserEmail, viewModel.QuestionNumber, answer);
+            }
+            else
+            {
+                throw new InvalidOperationException("Sesja nie jest poprawnie zainicjalizowana");
+            }
 
             await HandleDiagnosticResponse(response);
         }
@@ -439,10 +496,37 @@
 
         try
         {
-            var isValid = await DiagnosticService.ValidateSessionAsync(viewModel.UserEmail!);
+            bool isValid;
+            DiagnosticSessionInfo? sessionInfo = null;
+
+            if (viewModel.IsAnonymous && viewModel.SessionId.HasValue)
+            {
+                // Anonymous user validation
+                isValid = await DiagnosticService.ValidateSessionByIdAsync(viewModel.SessionId.Value);
+                if (isValid)
+                {
+                    sessionInfo = await DiagnosticService.GetSessionInfoByIdAsync(viewModel.SessionId.Value);
+                }
+            }
+            else if (!viewModel.IsAnonymous && !string.IsNullOrEmpty(viewModel.UserEmail))
+            {
+                // Authenticated user validation
+                isValid = await DiagnosticService.ValidateSessionAsync(viewModel.UserEmail);
+                if (isValid)
+                {
+                    sessionInfo = await DiagnosticService.GetSessionInfoAsync(viewModel.UserEmail);
+                }
+            }
+            else
+            {
+                Logger.LogWarning("Session validation failed - invalid session state");
+                isValid = false;
+            }
+
             if (!isValid)
             {
-                Logger.LogWarning("Session validation failed for user {UserEmail}", viewModel.UserEmail);
+                Logger.LogWarning("Session validation failed for {SessionType} session", 
+                    viewModel.IsAnonymous ? "anonymous" : "authenticated");
                 await InvokeAsync(() =>
                 {
                     viewModel.SetError("Sesja wygasła. Zostaniesz przekierowany na stronę główną.");
@@ -452,23 +536,20 @@
                 await Task.Delay(3000);
                 Navigation.NavigateTo("/");
             }
-            else
+            else if (sessionInfo != null)
             {
                 // Update session time remaining
-                var sessionInfo = await DiagnosticService.GetSessionInfoAsync(viewModel.UserEmail!);
-                if (sessionInfo != null)
+                await InvokeAsync(() =>
                 {
-                    await InvokeAsync(() =>
-                    {
-                        viewModel.UpdateSessionInfo(sessionInfo.TimeRemaining.ToString(@"mm\:ss"));
-                        StateHasChanged();
-                    });
-                }
+                    viewModel.UpdateSessionInfo(sessionInfo.TimeRemaining.ToString(@"mm\:ss"));
+                    StateHasChanged();
+                });
             }
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error during session validation");
+            Logger.LogError(ex, "Error during session validation for {SessionType} session", 
+                viewModel.IsAnonymous ? "anonymous" : "authenticated");
             // Don't show error to user for session validation failures
         }
     }
@@ -489,6 +570,3 @@
         }
     }
 }
-
- 
- 

@@ -2,17 +2,47 @@ using QiBalance.Models.DTOs;
 
 namespace QiBalance.Components.ViewModels;
 
+/// <summary>
+/// ViewModel for diagnostic component with support for both authenticated and anonymous users
+/// </summary>
 public class DiagnosticViewModel
 {
-    public bool IsLoading { get; set; }
-    public string LoadingMessage { get; set; } = "Ładowanie...";
-    public bool HasError { get; set; }
-    public string? ErrorMessage { get; set; }
-    
     public DiagnosticQuestion? CurrentQuestion { get; set; }
     public int QuestionNumber { get; set; } = 1;
     public int TotalQuestions { get; set; } = 15;
-    public int CurrentPhase => ((QuestionNumber - 1) / 5) + 1;
+    public int CurrentPhase { get; set; } = 1;
+    public bool IsLoading { get; set; } = false;
+    public bool IsProcessingAnswer { get; set; } = false;
+    public bool HasError { get; set; } = false;
+    public string? ErrorMessage { get; set; }
+    public string LoadingMessage { get; set; } = "Ładowanie...";
+    
+    // User context - can be null for anonymous users
+    public string? UserEmail { get; set; }
+    
+    // Session management - for anonymous users
+    public Guid? SessionId { get; set; }
+    
+    // Session health information
+    public string SessionTimeRemaining { get; set; } = "01:00:00";
+    public DateTime LastActivity { get; set; } = DateTime.UtcNow;
+    
+    // Current answer state
+    public bool? CurrentAnswer { get; set; }
+
+    /// <summary>
+    /// Indicates if this is an anonymous session
+    /// </summary>
+    public bool IsAnonymous => string.IsNullOrEmpty(UserEmail);
+    
+    /// <summary>
+    /// Indicates if session is properly initialized
+    /// </summary>
+    public bool IsSessionInitialized => !IsAnonymous ? !string.IsNullOrEmpty(UserEmail) : SessionId.HasValue;
+
+    /// <summary>
+    /// Description of current diagnostic phase
+    /// </summary>
     public string PhaseDescription => CurrentPhase switch
     {
         1 => "Podstawowa ocena - pytania o stan ogólny i konstytucję",
@@ -20,19 +50,12 @@ public class DiagnosticViewModel
         3 => "Specjalistyczna diagnoza - ostateczne ustalenia syndromu TCM",
         _ => "Diagnoza TCM"
     };
-    
-    public bool IsProcessingAnswer { get; set; }
-    public bool? CurrentAnswer { get; set; }
-    public bool IsCurrentQuestionAnswered => CurrentAnswer.HasValue;
-    
-    public string? UserEmail { get; set; }
-    public string SessionTimeRemaining { get; set; } = "30:00";
-    public DateTime LastActivity { get; set; } = DateTime.UtcNow;
 
     public void SetCurrentQuestion(DiagnosticQuestion question, int questionNumber)
     {
         CurrentQuestion = question;
         QuestionNumber = questionNumber;
+        CurrentPhase = GetPhaseFromQuestionNumber(questionNumber);
         CurrentAnswer = null;
         LastActivity = DateTime.UtcNow;
     }
@@ -40,16 +63,15 @@ public class DiagnosticViewModel
     public void SetProcessingAnswer(bool isProcessing, bool? answer = null)
     {
         IsProcessingAnswer = isProcessing;
-        if (answer.HasValue)
-        {
-            CurrentAnswer = answer;
-        }
+        CurrentAnswer = answer;
+        if (isProcessing)
+            LastActivity = DateTime.UtcNow;
     }
 
-    public void SetError(string errorMessage)
+    public void SetError(string message)
     {
         HasError = true;
-        ErrorMessage = errorMessage;
+        ErrorMessage = message;
         IsLoading = false;
         IsProcessingAnswer = false;
     }
@@ -65,6 +87,26 @@ public class DiagnosticViewModel
         SessionTimeRemaining = timeRemaining;
         LastActivity = DateTime.UtcNow;
     }
+    
+    /// <summary>
+    /// Initialize for authenticated user
+    /// </summary>
+    public void InitializeForUser(string userEmail)
+    {
+        UserEmail = userEmail;
+        SessionId = null; // Clear session ID for authenticated users
+    }
+    
+    /// <summary>
+    /// Initialize for anonymous user
+    /// </summary> 
+    public void InitializeForAnonymous(Guid sessionId)
+    {
+        SessionId = sessionId;
+        UserEmail = null; // Clear user email for anonymous users
+    }
+
+    private int GetPhaseFromQuestionNumber(int questionNumber) => ((questionNumber - 1) / 5) + 1;
 }
 
 // Additional diagnostic progress model for auto-save

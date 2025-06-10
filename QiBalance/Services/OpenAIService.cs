@@ -146,7 +146,7 @@ namespace QiBalance.Services
             var phaseInfo = GetPhaseInfo(phase);
             var symptomsText = string.IsNullOrEmpty(initialSymptoms) ? "Brak konkretnych objawów" : initialSymptoms;
             
-            var prompt = $@"Jesteś ekspertem medycyny chińskiej (TCM). Wygeneruj dokładnie 5 pytań typu tak/nie dla {phaseInfo.Name}.
+            var prompt = $@"Jesteś ekspertem tradycyjnej medycyny chińskiej (TCM). Twoim celem jest zdiagnozowanie różnicowe syndromu według medycyny Chińskiej w celu przygotowania zaleceń dietetycznych. Osoba diagnozowana nie słyszała o Medycynie Chińskiej, uwzględnij to. Wygeneruj dokładnie 5 pytań typu tak/nie dla {phaseInfo.Name}.
 
 Objawy początkowe: {symptomsText}
 

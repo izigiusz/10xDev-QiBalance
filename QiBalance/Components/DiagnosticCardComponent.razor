@@ -63,8 +63,6 @@
     }
 </div>
 
-<link href="~/css/diagnostic-components.css" rel="stylesheet" />
-
 @code {
     /// <summary>
     /// Current diagnostic question to display
@@ -100,7 +98,12 @@
     /// </summary>
     private async Task HandleAnswerSelected(bool answer)
     {
-        if (IsLoading || CurrentQuestion == null)
+        if (IsLoading)
+        {
+            return;
+        }
+        
+        if (CurrentQuestion == null)
         {
             return;
         }

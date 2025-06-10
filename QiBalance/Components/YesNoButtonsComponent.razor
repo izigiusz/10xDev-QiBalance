@@ -1,3 +1,4 @@
+@rendermode InteractiveServer
 @* Yes/No Buttons Component - Provides accessible answer selection with keyboard support *@
 
 <div class="yes-no-buttons-container d-flex gap-3 justify-content-center">
@@ -32,8 +33,6 @@
     </button>
 </div>
 
-<link href="~/css/diagnostic-components.css" rel="stylesheet" />
-
 @code {
     /// <summary>
     /// Whether buttons are disabled (e.g., during loading)
@@ -48,7 +47,7 @@
     public EventCallback<bool> OnAnswerClick { get; set; }
     
     private DateTime lastClickTime = DateTime.MinValue;
-    private const int DebounceMilliseconds = 500;
+    private const int DebounceMilliseconds = 200;
     
     protected override void OnParametersSet()
     {
@@ -90,9 +89,16 @@
         }
         lastClickTime = now;
         
+        // Add debug logging
+        Console.WriteLine($"YesNoButtonsComponent: Button clicked with answer: {answer}");
+        
         if (OnAnswerClick.HasDelegate)
         {
             await OnAnswerClick.InvokeAsync(answer);
+        }
+        else
+        {
+            Console.WriteLine("YesNoButtonsComponent: OnAnswerClick delegate is null!");
         }
     }
     
