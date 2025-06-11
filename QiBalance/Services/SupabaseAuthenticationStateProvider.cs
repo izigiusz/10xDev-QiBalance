@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components.Authorization;
 using System.Security.Claims;
 using QiBalance.Services;
+using Microsoft.AspNetCore.Http;
 
 namespace QiBalance.Services
 {
@@ -8,11 +9,13 @@ namespace QiBalance.Services
     {
         private readonly IAuthService _authService;
         private readonly ILogger<SupabaseAuthenticationStateProvider> _logger;
+        private readonly IHttpContextAccessor _httpContextAccessor;
         
-        public SupabaseAuthenticationStateProvider(IAuthService authService, ILogger<SupabaseAuthenticationStateProvider> logger)
+        public SupabaseAuthenticationStateProvider(IAuthService authService, ILogger<SupabaseAuthenticationStateProvider> logger, IHttpContextAccessor httpContextAccessor)
         {
             _authService = authService;
             _logger = logger;
+            _httpContextAccessor = httpContextAccessor;
             
             // Subscribe to auth state changes
             _authService.AuthenticationStateChanged += OnAuthenticationStateChanged;
@@ -22,7 +25,19 @@ namespace QiBalance.Services
         {
             try
             {
+                // Najpierw spróbuj z bieżącej sesji klienta Supabase
                 var user = await _authService.GetCurrentUserAsync();
+
+                // Jeśli nie ma, spróbuj odczytać token z cookie (dla nowego obwodu)
+                if (user == null)
+                {
+                    var token = _httpContextAccessor.HttpContext?.Request.Cookies["sb-access-token"];
+                    if (!string.IsNullOrEmpty(token))
+                    {
+                        _logger.LogInformation("Found auth token in cookie, attempting to restore session.");
+                        user = await _authService.Client.Auth.GetUser(token);
+                    }
+                }
                 
                 if (user != null)
                 {

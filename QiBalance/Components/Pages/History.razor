@@ -1,0 +1,509 @@
+@page "/historia"
+@rendermode InteractiveServer
+@using QiBalance.Models.DTOs
+@using QiBalance.Components.ViewModels
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IJSRuntime JSRuntime
+@inject IRecommendationService RecommendationService
+@inject NavigationManager Navigation
+@inject ILogger<History> Logger
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Historia Porad - QiBalance</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-10 col-xl-8">
+            @if (viewModel.IsLoading)
+            {
+                <div class="text-center">
+                    <div class="spinner-border text-primary mb-3" role="status">
+                        <span class="visually-hidden">Ładowanie...</span>
+                    </div>
+                    <p class="text-muted">Sprawdzanie uprawnień i ładowanie danych...</p>
+                </div>
+            }
+            else if (!isUserAuthenticated)
+            {
+                <!-- Użytkownik niezalogowany -->
+                <div class="card border-warning">
+                    <div class="card-body text-center p-4">
+                        <i class="bi bi-lock text-warning" style="font-size: 3rem;"></i>
+                        <h5 class="mt-3 mb-3">Dostęp ograniczony</h5>
+                        <p class="text-muted mb-4">
+                            Historia porad jest dostępna tylko dla zalogowanych użytkowników.<br>
+                            Zaloguj się, aby zobaczyć swoje zapisane rekomendacje TCM.
+                        </p>
+                        <button class="btn btn-primary me-2" @onclick="GoToLogin">
+                            <i class="bi bi-box-arrow-in-right me-1"></i>
+                            Zaloguj się
+                        </button>
+                        <button class="btn btn-outline-secondary" @onclick="GoHome">
+                            <i class="bi bi-house me-1"></i>
+                            Info
+                        </button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- Użytkownik zalogowany - pokaż historię -->
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-primary text-white py-3">
+                        <div class="row align-items-center">
+                            <div class="col">
+                                <h4 class="mb-0">
+                                    <i class="bi bi-clock-history me-2"></i>
+                                    Historia Twoich Porad TCM
+                                </h4>
+                                <small class="opacity-75">@userEmail</small>
+                            </div>
+                            <div class="col-auto">
+                                <span class="badge bg-light text-primary">
+                                    @(viewModel.TotalCount) rekordów
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card-body p-0">
+                        @if (viewModel.Recommendations?.Any() == true)
+                        {
+                            <!-- Historia rekomendacji -->
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th scope="col" class="border-0">Data</th>
+                                            <th scope="col" class="border-0">Syndrom TCM</th>
+                                            <th scope="col" class="border-0 d-none d-md-table-cell">Podgląd</th>
+                                            <th scope="col" class="border-0">Akcje</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var recommendation in viewModel.Recommendations)
+                                        {
+                                            <tr>
+                                                <td class="py-3">
+                                                    <div class="d-flex flex-column">
+                                                        <span class="fw-medium">@recommendation.DateGenerated.ToString("dd.MM.yyyy")</span>
+                                                        <small class="text-muted">@recommendation.DateGenerated.ToString("HH:mm")</small>
+                                                    </div>
+                                                </td>
+                                                <td class="py-3">
+                                                    <span class="badge bg-info text-white">
+                                                        @GetTcmSyndromeFromText(recommendation.RecommendationText)
+                                                    </span>
+                                                </td>
+                                                <td class="py-3 d-none d-md-table-cell">
+                                                    <div class="text-truncate" style="max-width: 200px;">
+                                                        @GetRecommendationPreview(recommendation.RecommendationText)
+                                                    </div>
+                                                </td>
+                                                <td class="py-3">
+                                                    <div class="btn-group" role="group">
+                                                        <button class="btn btn-outline-primary btn-sm" 
+                                                                @onclick="() => ViewRecommendation(recommendation.RecommendationId)"
+                                                                title="Zobacz szczegóły">
+                                                            <i class="bi bi-eye"></i>
+                                                            <span class="d-none d-lg-inline ms-1">Zobacz</span>
+                                                        </button>
+                                                        <button class="btn btn-outline-danger btn-sm" 
+                                                                @onclick="() => ConfirmDelete(recommendation.RecommendationId)"
+                                                                title="Usuń rekomendację">
+                                                            <i class="bi bi-trash"></i>
+                                                            <span class="d-none d-lg-inline ms-1">Usuń</span>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <!-- Paginacja -->
+                            @if (viewModel.TotalPages > 1)
+                            {
+                                <div class="card-footer bg-light border-0">
+                                    <nav aria-label="Paginacja historii">
+                                        <ul class="pagination pagination-sm mb-0 justify-content-center">
+                                            <li class="page-item @(viewModel.CurrentPage == 1 ? "disabled" : "")">
+                                                <button class="page-link" @onclick="() => ChangePage(1)" disabled="@(viewModel.CurrentPage == 1)">
+                                                    <i class="bi bi-chevron-double-left"></i>
+                                                </button>
+                                            </li>
+                                            <li class="page-item @(viewModel.CurrentPage == 1 ? "disabled" : "")">
+                                                <button class="page-link" @onclick="() => ChangePage(viewModel.CurrentPage - 1)" disabled="@(viewModel.CurrentPage == 1)">
+                                                    <i class="bi bi-chevron-left"></i>
+                                                </button>
+                                            </li>
+                                            
+                                            @for (int pageNum = Math.Max(1, viewModel.CurrentPage - 2); pageNum <= Math.Min(viewModel.TotalPages, viewModel.CurrentPage + 2); pageNum++)
+                                            {
+                                                <li class="page-item @(pageNum == viewModel.CurrentPage ? "active" : "")">
+                                                    <button class="page-link" @onclick="() => ChangePage(pageNum)">
+                                                        @pageNum
+                                                    </button>
+                                                </li>
+                                            }
+                                            
+                                            <li class="page-item @(viewModel.CurrentPage == viewModel.TotalPages ? "disabled" : "")">
+                                                <button class="page-link" @onclick="() => ChangePage(viewModel.CurrentPage + 1)" disabled="@(viewModel.CurrentPage == viewModel.TotalPages)">
+                                                    <i class="bi bi-chevron-right"></i>
+                                                </button>
+                                            </li>
+                                            <li class="page-item @(viewModel.CurrentPage == viewModel.TotalPages ? "disabled" : "")">
+                                                <button class="page-link" @onclick="() => ChangePage(viewModel.TotalPages)" disabled="@(viewModel.CurrentPage == viewModel.TotalPages)">
+                                                    <i class="bi bi-chevron-double-right"></i>
+                                                </button>
+                                            </li>
+                                        </ul>
+                                    </nav>
+                                    
+                                    <div class="text-center mt-2">
+                                        <small class="text-muted">
+                                            Strona @viewModel.CurrentPage z @viewModel.TotalPages 
+                                            (@viewModel.TotalCount @(viewModel.TotalCount == 1 ? "rekomendacja" : 
+                                                viewModel.TotalCount < 5 ? "rekomendacje" : "rekomendacji"))
+                                        </small>
+                                    </div>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <!-- Brak danych -->
+                            <div class="text-center py-5">
+                                <i class="bi bi-journal-x text-muted" style="font-size: 3rem;"></i>
+                                <h5 class="mt-3 mb-3 text-muted">Brak historii porad</h5>
+                                <p class="text-muted mb-4">
+                                    Nie masz jeszcze żadnych zapisanych rekomendacji.<br>
+                                    Przeprowadź diagnozę, aby otrzymać pierwsze porady TCM.
+                                </p>
+                                <button class="btn btn-primary" @onclick="StartNewDiagnosis">
+                                    <i class="bi bi-plus-circle me-1"></i>
+                                    Nowa Porada
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Modal szczegółów rekomendacji -->
+@if (viewModel.SelectedRecommendation != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-clipboard2-heart me-2"></i>
+                        Rekomendacje z @viewModel.SelectedRecommendation.DateGenerated.ToString("dd.MM.yyyy")
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="recommendation-content">
+                        @((MarkupString)FormatRecommendationText(viewModel.SelectedRecommendation.RecommendationText))
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">
+                        <i class="bi bi-x-circle me-1"></i>
+                        Zamknij
+                    </button>
+                    <button type="button" class="btn btn-outline-danger" @onclick="() => ConfirmDelete(viewModel.SelectedRecommendation.RecommendationId)">
+                        <i class="bi bi-trash me-1"></i>
+                        Usuń
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private HistoryViewModel viewModel = new();
+    private bool isDisposed = false;
+    private bool isUserAuthenticated = false;
+    private string? userEmail = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            viewModel.IsLoading = true;
+            StateHasChanged();
+
+            // Sprawdź uwierzytelnianie
+            await CheckAuthenticationAsync();
+            
+            // Załaduj historię tylko jeśli użytkownik jest zalogowany
+            if (isUserAuthenticated)
+            {
+                await LoadUserHistoryAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error initializing history page");
+            viewModel.SetError("Błąd inicjalizacji strony historii. Spróbuj ponownie.");
+        }
+        finally
+        {
+            viewModel.IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CheckAuthenticationAsync()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            
+            isUserAuthenticated = user.Identity?.IsAuthenticated == true;
+            userEmail = isUserAuthenticated 
+                ? user.FindFirst(c => c.Type == ClaimTypes.Email)?.Value
+                : null;
+
+            Logger.LogInformation("[HISTORY] Authentication check - IsAuthenticated: {IsAuth}, Email: {Email}", 
+                isUserAuthenticated, userEmail ?? "null");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error checking authentication");
+            isUserAuthenticated = false;
+            userEmail = null;
+        }
+    }
+
+    private async Task LoadUserHistoryAsync()
+    {
+        if (!isUserAuthenticated || string.IsNullOrEmpty(userEmail))
+            return;
+
+        try
+        {
+            viewModel.ClearError();
+
+            // Pobierz rekomendacje z paginacją
+            var pagedResult = await RecommendationService.GetUserRecommendationsAsync(
+                userEmail, 
+                viewModel.CurrentPage, 
+                viewModel.PageSize, 
+                SortOrder.DateDesc);
+
+            viewModel.SetRecommendations(pagedResult);
+            
+            Logger.LogInformation("[HISTORY] Loaded {Count} recommendations for user: {UserEmail}", 
+                pagedResult.Items.Count, userEmail);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading user history");
+            
+            // Nie pokazuj błędu użytkownikowi - po prostu traktuj jako pustą historię
+            var emptyResult = new PagedResult<RecommendationEntity>
+            {
+                Items = new List<RecommendationEntity>(),
+                TotalCount = 0,
+                Page = 1,
+                Limit = 10
+            };
+            viewModel.SetRecommendations(emptyResult);
+            
+            Logger.LogInformation("[HISTORY] Showing empty history due to error - treating as no recommendations yet");
+        }
+    }
+
+    private async Task ChangePage(int page)
+    {
+        if (page == viewModel.CurrentPage || page < 1 || page > viewModel.TotalPages)
+            return;
+
+        viewModel.CurrentPage = page;
+        await LoadUserHistoryAsync();
+    }
+
+    private async Task ViewRecommendation(Guid recommendationId)
+    {
+        if (!isUserAuthenticated || string.IsNullOrEmpty(userEmail))
+        {
+            GoToLogin();
+            return;
+        }
+
+        try
+        {
+            var recommendation = await RecommendationService.GetRecommendationByIdAsync(recommendationId, userEmail);
+            if (recommendation != null)
+            {
+                viewModel.SetSelectedRecommendation(recommendation);
+                StateHasChanged();
+                
+                Logger.LogInformation("[HISTORY] Viewing recommendation: {RecommendationId}", recommendationId);
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Nie znaleziono rekomendacji.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error viewing recommendation: {RecommendationId}", recommendationId);
+            await JSRuntime.InvokeVoidAsync("alert", "Błąd podczas pobierania szczegółów rekomendacji.");
+        }
+    }
+
+    private async Task ConfirmDelete(Guid recommendationId)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            "Czy na pewno chcesz usunąć tę rekomendację? Tej operacji nie można cofnąć.");
+        
+        if (confirmed)
+        {
+            await DeleteRecommendation(recommendationId);
+        }
+    }
+
+    private async Task DeleteRecommendation(Guid recommendationId)
+    {
+        if (!isUserAuthenticated || string.IsNullOrEmpty(userEmail))
+        {
+            GoToLogin();
+            return;
+        }
+
+        try
+        {
+            var success = await RecommendationService.DeleteRecommendationAsync(recommendationId, userEmail);
+            
+            if (success)
+            {
+                // Zamknij modal jeśli otwarty
+                viewModel.ClearSelectedRecommendation();
+                
+                // Odśwież listę
+                await LoadUserHistoryAsync();
+                
+                Logger.LogInformation("[HISTORY] Deleted recommendation: {RecommendationId}", recommendationId);
+                await JSRuntime.InvokeVoidAsync("alert", "Rekomendacja została usunięta.");
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Błąd podczas usuwania rekomendacji.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error deleting recommendation: {RecommendationId}", recommendationId);
+            await JSRuntime.InvokeVoidAsync("alert", "Błąd podczas usuwania rekomendacji.");
+        }
+    }
+
+    private void CloseModal()
+    {
+        viewModel.ClearSelectedRecommendation();
+        StateHasChanged();
+    }
+
+    private void StartNewDiagnosis()
+    {
+        Navigation.NavigateTo("/diagnostic");
+    }
+
+    private void GoToLogin()
+    {
+        Navigation.NavigateTo("/login");
+    }
+
+    private void GoHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    // Helper methods for display
+    private string GetTcmSyndromeFromText(string recommendationText)
+    {
+        if (string.IsNullOrEmpty(recommendationText))
+            return "Nieznany syndrom";
+
+        // Próba wyciągnięcia syndromu z tekstu - szukamy wzorców
+        var lines = recommendationText.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        
+        // Szukaj linii zawierającej "syndrom" lub "Syndrom"
+        var syndromeLine = lines.FirstOrDefault(line => 
+            line.Contains("syndrom", StringComparison.OrdinalIgnoreCase) || 
+            line.Contains("TCM", StringComparison.OrdinalIgnoreCase));
+        
+        if (!string.IsNullOrEmpty(syndromeLine))
+        {
+            // Wyciągnij tylko nazwę syndromu (usuń znaczniki, gwiazdki itp.)
+            var cleanLine = syndromeLine.Replace("**", "").Replace("*", "").Replace("#", "").Trim();
+            
+            // Jeśli linia jest zbyt długa, skróć ją
+            if (cleanLine.Length > 50)
+            {
+                cleanLine = cleanLine.Substring(0, 47) + "...";
+            }
+            
+            return cleanLine;
+        }
+        
+        return "Syndrom TCM";
+    }
+
+    private string GetRecommendationPreview(string recommendationText)
+    {
+        if (string.IsNullOrEmpty(recommendationText))
+            return "Brak podglądu";
+
+        // Usuń formatowanie markdown
+        var cleanText = recommendationText
+            .Replace("**", "")
+            .Replace("*", "")
+            .Replace("#", "")
+            .Replace("\n", " ")
+            .Trim();
+
+        // Zwróć pierwsze zdanie lub max 100 znaków
+        var firstSentence = cleanText.Split('.').FirstOrDefault()?.Trim();
+        if (!string.IsNullOrEmpty(firstSentence) && firstSentence.Length <= 100)
+        {
+            return firstSentence + ".";
+        }
+
+        return cleanText.Length > 100 ? cleanText.Substring(0, 97) + "..." : cleanText;
+    }
+
+    private string FormatRecommendationText(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return "Brak szczegółów rekomendacji.";
+
+        // Podstawowe formatowanie markdown do HTML
+        var formattedText = text
+            .Replace("**", "<strong>")
+            .Replace("**", "</strong>")
+            .Replace("\n\n", "</p><p>")
+            .Replace("\n", "<br>");
+
+        return $"<div class='formatted-recommendations'><p>{formattedText}</p></div>";
+    }
+
+    public void Dispose()
+    {
+        if (!isDisposed)
+        {
+            isDisposed = true;
+        }
+    }
+}

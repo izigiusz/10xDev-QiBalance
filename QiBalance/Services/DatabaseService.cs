@@ -14,13 +14,14 @@ namespace QiBalance.Services
             _logger = logger;
         }
 
-        public async Task<IEnumerable<Recommendation>> GetRecommendationsAsync(Guid userId)
+        public async Task<IEnumerable<Recommendation>> GetRecommendationsAsync(string userId)
         {
             try
             {
+                var userGuid = Guid.Parse(userId);
                 var response = await _supabaseService.Client
                     .From<Recommendation>()
-                    .Where(r => r.UserId == userId)
+                    .Where(r => r.UserId == userGuid)
                     .Order(r => r.DateGenerated, Supabase.Postgrest.Constants.Ordering.Descending)
                     .Get();
                     
@@ -34,13 +35,14 @@ namespace QiBalance.Services
             }
         }
 
-        public async Task<Recommendation?> GetRecommendationAsync(Guid recommendationId, Guid userId)
+        public async Task<Recommendation?> GetRecommendationAsync(Guid recommendationId, string userId)
         {
             try
             {
+                var userGuid = Guid.Parse(userId);
                 var response = await _supabaseService.Client
                     .From<Recommendation>()
-                    .Where(r => r.RecommendationId == recommendationId && r.UserId == userId)
+                    .Where(r => r.RecommendationId == recommendationId && r.UserId == userGuid)
                     .Single();
                     
                 _logger.LogDebug("Retrieved recommendation: {RecommendationId} for user: {UserId}", recommendationId, userId);
@@ -67,7 +69,7 @@ namespace QiBalance.Services
 
                 var response = await _supabaseService.Client
                     .From<Recommendation>()
-                    .Insert(newRecommendation);
+                    .Upsert(newRecommendation);
                     
                 _logger.LogInformation("Created recommendation for user: {UserId}", recommendation.UserId);
                 return response.Models.First();
@@ -79,10 +81,11 @@ namespace QiBalance.Services
             }
         }
 
-        public async Task<Recommendation?> UpdateRecommendationAsync(Guid recommendationId, RecommendationUpdate recommendation, Guid userId)
+        public async Task<Recommendation?> UpdateRecommendationAsync(Guid recommendationId, RecommendationUpdate recommendation, string userId)
         {
             try
             {
+                var userGuid = Guid.Parse(userId);
                 var existing = await GetRecommendationAsync(recommendationId, userId);
                 if (existing == null) 
                 {
@@ -92,7 +95,7 @@ namespace QiBalance.Services
 
                 var response = await _supabaseService.Client
                     .From<Recommendation>()
-                    .Where(r => r.RecommendationId == recommendationId && r.UserId == userId)
+                    .Where(r => r.RecommendationId == recommendationId && r.UserId == userGuid)
                     .Set(r => r.RecommendationText!, recommendation.RecommendationText!)
                     .Update();
                     
@@ -106,13 +109,14 @@ namespace QiBalance.Services
             }
         }
 
-        public async Task<bool> DeleteRecommendationAsync(Guid recommendationId, Guid userId)
+        public async Task<bool> DeleteRecommendationAsync(Guid recommendationId, string userId)
         {
             try
             {
+                var userGuid = Guid.Parse(userId);
                 await _supabaseService.Client
                     .From<Recommendation>()
-                    .Where(r => r.RecommendationId == recommendationId && r.UserId == userId)
+                    .Where(r => r.RecommendationId == recommendationId && r.UserId == userGuid)
                     .Delete();
                     
                 _logger.LogInformation("Deleted recommendation: {RecommendationId} for user: {UserId}", recommendationId, userId);

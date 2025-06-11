@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using Supabase.Postgrest.Attributes;
 using Supabase.Postgrest.Models;
 using QiBalance.Services;
+using Newtonsoft.Json;
 
 namespace QiBalance.Models
 {
@@ -17,12 +18,14 @@ namespace QiBalance.Models
         /// <summary>
         /// Unique identifier for each recommendation
         /// </summary>
-        [PrimaryKey("recommendation_id")]
+        [JsonIgnore]
         public Guid RecommendationId { get; set; } = Guid.NewGuid();
 
         /// <summary>
         /// Implementation of IEntity.Id property
         /// </summary>
+        [PrimaryKey("recommendation_id")]
+        [Supabase.Postgrest.Attributes.Column("recommendation_id")]
         public object? Id 
         { 
             get => RecommendationId; 
@@ -80,11 +83,11 @@ namespace QiBalance.Models
     /// </summary>
     public interface IDatabaseContext
     {
-        Task<IEnumerable<Recommendation>> GetRecommendationsAsync(Guid userId);
-        Task<Recommendation?> GetRecommendationAsync(Guid recommendationId, Guid userId);
+        Task<IEnumerable<Recommendation>> GetRecommendationsAsync(string userId);
+        Task<Recommendation?> GetRecommendationAsync(Guid recommendationId, string userId);
         Task<Recommendation> CreateRecommendationAsync(RecommendationInsert recommendation);
-        Task<Recommendation?> UpdateRecommendationAsync(Guid recommendationId, RecommendationUpdate recommendation, Guid userId);
-        Task<bool> DeleteRecommendationAsync(Guid recommendationId, Guid userId);
+        Task<Recommendation?> UpdateRecommendationAsync(Guid recommendationId, RecommendationUpdate recommendation, string userId);
+        Task<bool> DeleteRecommendationAsync(Guid recommendationId, string userId);
     }
 
     /// <summary>

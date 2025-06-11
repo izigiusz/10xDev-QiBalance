@@ -1,7 +1,9 @@
 using Supabase.Gotrue;
 using QiBalance.Services;
 using QiBalance.Models.DTOs;
-using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
+
 
 namespace QiBalance.Services
 {
@@ -10,6 +12,7 @@ namespace QiBalance.Services
     /// </summary>
     public interface IAuthService
     {
+        Supabase.Client Client { get; }
         // Existing authentication methods
         Task<Session?> SignInAsync(string email, string password);
         Task<Session?> SignUpAsync(string email, string password);
@@ -24,6 +27,7 @@ namespace QiBalance.Services
         Task SetUserContextAsync(string userEmail);
         Task ClearUserContextAsync();
         string? CurrentUserEmail { get; }
+        Task<string?> GetCurrentUserIdAsync();
     }
 
     /// <summary>
@@ -35,16 +39,23 @@ namespace QiBalance.Services
         private readonly ILogger<AuthService> _logger;
         private readonly UserContext _userContext;
         private readonly IValidationService _validationService;
+        private readonly NavigationManager _navigationManager;
+        private readonly IJSRuntime _jsRuntime;
         
         public event Action? AuthenticationStateChanged;
         
+        public Supabase.Client Client => _supabaseService.Client;
+
         public AuthService(ISupabaseService supabaseService, ILogger<AuthService> logger, 
-                          UserContext userContext, IValidationService validationService)
+                          UserContext userContext, IValidationService validationService,
+                          NavigationManager navigationManager, IJSRuntime jsRuntime)
         {
             _supabaseService = supabaseService;
             _logger = logger;
             _userContext = userContext;
             _validationService = validationService;
+            _navigationManager = navigationManager;
+            _jsRuntime = jsRuntime;
             
             // Subscribe to auth state changes
             _supabaseService.Client.Auth.AddStateChangedListener((sender, changed) =>
@@ -62,7 +73,12 @@ namespace QiBalance.Services
             try
             {
                 var result = await _supabaseService.Client.Auth.SignIn(email, password);
-                _logger.LogInformation("User signed in successfully: {Email}", email);
+                if (result != null)
+                {
+                    // Set user context after successful login
+                    await SetUserContextAsync(email);
+                    _logger.LogInformation("User signed in successfully: {Email}", email);
+                }
                 return result;
             }
             catch (Exception ex)
@@ -77,7 +93,12 @@ namespace QiBalance.Services
             try
             {
                 var result = await _supabaseService.Client.Auth.SignUp(email, password);
-                _logger.LogInformation("User signed up successfully: {Email}", email);
+                if (result != null)
+                {
+                    // Set user context after successful registration
+                    await SetUserContextAsync(email);
+                    _logger.LogInformation("User signed up successfully: {Email}", email);
+                }
                 return result;
             }
             catch (Exception ex)
@@ -92,6 +113,12 @@ namespace QiBalance.Services
             try
             {
                 await _supabaseService.Client.Auth.SignOut();
+                await ClearUserContextAsync();
+                
+                // Usuń cookie i przeładuj stronę
+                await _jsRuntime.InvokeVoidAsync("eval", "document.cookie = 'sb-access-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'");
+                _navigationManager.NavigateTo("/", forceLoad: true);
+                
                 _logger.LogInformation("User signed out successfully");
             }
             catch (Exception ex)
@@ -186,6 +213,33 @@ namespace QiBalance.Services
             {
                 _logger.LogError(ex, "Error clearing user context");
                 throw;
+            }
+        }
+
+        public async Task<string?> GetCurrentUserIdAsync()
+        {
+            var user = await _supabaseService.GetCurrentUserAsync();
+            return user?.Id;
+        }
+
+        private async Task<AuthResult> HandleAuthResponse(Func<Task<Session?>> authAction)
+        {
+            try
+            {
+                var result = await authAction();
+                if (result != null)
+                {
+                    // Set user context after successful login or registration
+                    await SetUserContextAsync(result.User.Email);
+                    _logger.LogInformation("User {Action} successfully: {Email}", authAction.Method.Name, result.User.Email);
+                    return new AuthResult { Success = true, UserEmail = result.User.Email };
+                }
+                return new AuthResult { Success = false, Error = "Authentication failed" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error {Action}", authAction.Method.Name);
+                return new AuthResult { Success = false, Error = ex.Message };
             }
         }
     }

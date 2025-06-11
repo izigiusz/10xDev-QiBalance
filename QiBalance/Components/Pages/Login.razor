@@ -5,6 +5,7 @@
 @inject IAuthService AuthService
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Logowanie - QiBalance</PageTitle>
 
@@ -73,15 +74,18 @@
 
             var result = await AuthService.SignInAsync(loginModel.Email, loginModel.Password);
             
-            if (result != null)
+            if (result?.AccessToken != null)
             {
-                // Notify the authentication state provider about the change
+                // Zapisz token w cookie
+                await JSRuntime.InvokeVoidAsync("eval", $"document.cookie = 'sb-access-token={result.AccessToken}; path=/; SameSite=Lax; max-age=3600'");
+                
+                // Powiadom i przeładuj stronę
                 if (AuthStateProvider is SupabaseAuthenticationStateProvider supabaseProvider)
                 {
                     supabaseProvider.NotifyAuthenticationStateChanged();
                 }
                 
-                Navigation.NavigateTo("/");
+                Navigation.NavigateTo("/", forceLoad: true); // forceLoad jest kluczowe!
             }
             else
             {

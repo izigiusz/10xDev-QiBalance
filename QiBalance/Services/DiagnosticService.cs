@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Caching.Memory;
 using QiBalance.Models.DTOs;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
+using Microsoft.AspNetCore.Components.Authorization;
 
 namespace QiBalance.Services
 {
@@ -41,6 +43,9 @@ namespace QiBalance.Services
         private readonly IMemoryCache _cache;
         private readonly IValidationService _validationService;
         private readonly ILogger<DiagnosticService> _logger;
+        private readonly IRecommendationService _recommendationService;
+        private readonly ISupabaseService _supabaseService;
+        private readonly AuthenticationStateProvider _authStateProvider;
 
         // Constants for session management
         private const int TotalQuestions = 15;
@@ -51,12 +56,18 @@ namespace QiBalance.Services
             IOpenAIService openAIService,
             IMemoryCache cache,
             IValidationService validationService,
-            ILogger<DiagnosticService> logger)
+            ILogger<DiagnosticService> logger,
+            IRecommendationService recommendationService,
+            ISupabaseService supabaseService,
+            AuthenticationStateProvider authStateProvider)
         {
             _openAIService = openAIService;
             _cache = cache;
             _validationService = validationService;
             _logger = logger;
+            _recommendationService = recommendationService;
+            _supabaseService = supabaseService;
+            _authStateProvider = authStateProvider;
         }
 
         /// <summary>
@@ -99,13 +110,9 @@ namespace QiBalance.Services
                 var cacheKey = GetSessionCacheKey(session.SessionId);
                 _cache.Set(cacheKey, session, TimeSpan.FromHours(SessionTimeoutHours));
                 
-                // Only cache by userId if user is authenticated
-                if (!string.IsNullOrEmpty(userId))
-                {
-                    var userCacheKey = GetUserSessionCacheKey(userId);
-                    _cache.Set(userCacheKey, session, TimeSpan.FromHours(SessionTimeoutHours));
-                }
-
+                // Note: We don't cache by userId here anymore as it could be either GUID or email
+                // Email-based caching is handled separately in GetOrCreateUserSessionAsync
+                
                 _logger.LogInformation("Diagnostic session created: {SessionId}, Phase: {Phase}, Questions: {QuestionCount}, Anonymous: {IsAnonymous}", 
                     session.SessionId, session.CurrentPhase, session.Questions.Count, string.IsNullOrEmpty(userId));
 
@@ -198,9 +205,25 @@ namespace QiBalance.Services
                         session.InitialSymptoms, 
                         session.Answers);
 
+                    // Save recommendation for authenticated users
+                    if (!string.IsNullOrEmpty(session.UserId))
+                    {
+                        await _recommendationService.SaveRecommendationAsync(session.UserId, recommendations);
+                        _logger.LogInformation("Recommendation saved for user: {UserId}", session.UserId);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Anonymous user session completed. Recommendation not saved.");
+                    }
+
                     // Remove session from cache
                     _cache.Remove(GetSessionCacheKey(sessionId));
-
+                    
+                    // For authenticated users, also remove from user-based cache
+                    // We need to find the original email that was used to cache this session
+                    // Since we can't easily reverse-lookup email from GUID in cache,
+                    // we'll let the session expire naturally or handle cleanup differently
+                    
                     _logger.LogInformation("Diagnostic session completed: {SessionId}, Syndrome: {Syndrome}", 
                         sessionId, recommendations.TcmSyndrome);
 
@@ -379,6 +402,28 @@ namespace QiBalance.Services
             return $"user_diagnostic_session_{userEmail}";
         }
 
+        /// <summary>
+        /// Get the actual user GUID from Supabase for authenticated user
+        /// </summary>
+        private async Task<string?> GetUserIdFromEmailAsync(string userEmail)
+        {
+            try
+            {
+                var currentUser = await _supabaseService.GetCurrentUserAsync();
+                if (currentUser?.Id != null && !string.IsNullOrEmpty(currentUser.Email) 
+                    && string.Equals(currentUser.Email, userEmail, StringComparison.OrdinalIgnoreCase))
+                {
+                    return currentUser.Id;
+                }
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting userId for email: {UserEmail}", userEmail);
+                return null;
+            }
+        }
+
         // Enhanced methods for simplified diagnostic flow
 
         /// <summary>
@@ -502,6 +547,17 @@ namespace QiBalance.Services
                         session.InitialSymptoms, 
                         session.Answers);
 
+                    // Save recommendation for authenticated users
+                    if (!string.IsNullOrEmpty(session.UserId))
+                    {
+                        await _recommendationService.SaveRecommendationAsync(session.UserId, recommendations);
+                        _logger.LogInformation("Recommendation saved for user: {UserId}", session.UserId);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Anonymous user session completed. Recommendation not saved.");
+                    }
+
                     // Remove session from cache
                     _cache.Remove(GetUserSessionCacheKey(userEmail));
 
@@ -586,8 +642,42 @@ namespace QiBalance.Services
                 return session;
             }
 
-            // Create new session if none exists or expired
-            return await StartSessionAsync("", userEmail);
+            // Get the actual user GUID from AuthenticationStateProvider instead of Supabase directly
+            try
+            {
+                var authState = await _authStateProvider.GetAuthenticationStateAsync();
+                var user = authState.User;
+                
+                if (!user.Identity?.IsAuthenticated == true)
+                {
+                    _logger.LogWarning("Cannot create session - user not authenticated");
+                    return null;
+                }
+
+                var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userId))
+                {
+                    _logger.LogWarning("Cannot create session - userId not found in claims");
+                    return null;
+                }
+
+                // Create new session with proper userId (GUID)
+                var newSession = await StartSessionAsync("", userId);
+                
+                // Also cache it with email-based key for user-based lookup
+                if (newSession != null)
+                {
+                    var userCacheKey = GetUserSessionCacheKey(userEmail);
+                    _cache.Set(userCacheKey, newSession, TimeSpan.FromHours(SessionTimeoutHours));
+                }
+                
+                return newSession;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting current user for session creation");
+                return null;
+            }
         }
 
         /// <summary>
@@ -622,8 +712,13 @@ namespace QiBalance.Services
         {
             try
             {
-                var cacheKey = GetUserSessionCacheKey(userEmail);
-                _cache.Set(cacheKey, session, TimeSpan.FromHours(SessionTimeoutHours));
+                // Update both email-based cache and session-based cache for consistency
+                var userCacheKey = GetUserSessionCacheKey(userEmail);
+                _cache.Set(userCacheKey, session, TimeSpan.FromHours(SessionTimeoutHours));
+                
+                var sessionCacheKey = GetSessionCacheKey(session.SessionId);
+                _cache.Set(sessionCacheKey, session, TimeSpan.FromHours(SessionTimeoutHours));
+                
                 await Task.CompletedTask;
             }
             catch (Exception ex)

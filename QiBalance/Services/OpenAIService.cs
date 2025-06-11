@@ -60,7 +60,6 @@ namespace QiBalance.Services
         {
             try
             {
-                // Validate input parameters
                 if (phase < 1 || phase > 3)
                     throw new ValidationException("Faza diagnostyczna musi być między 1 a 3");
 
@@ -275,6 +274,14 @@ WAŻNE: Zwróć TYLKO poprawny JSON bez dodatkowych komentarzy:
             try
             {
                 var cleanJson = ExtractJsonFromResponse(jsonResponse);
+
+                // Hotfix for OpenAI returning improperly escaped JSON.
+                // The model sometimes escapes markdown characters (like '#') which are not valid JSON escape sequences.
+                // This can lead to a JsonException. We are removing the backslash before such characters.
+                cleanJson = cleanJson.Replace("\\#", "#")
+                                     .Replace("\\*", "*")
+                                     .Replace("\\-", "-");
+
                 var result = JsonSerializer.Deserialize<RecommendationResult>(cleanJson, JsonOptions);
                 
                 if (result == null)

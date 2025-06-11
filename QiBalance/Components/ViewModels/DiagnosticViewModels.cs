@@ -51,62 +51,184 @@ public class DiagnosticViewModel
         _ => "Diagnoza TCM"
     };
 
+    /// <summary>
+    /// Initialize for authenticated user session
+    /// </summary>
+    public void InitializeForUser(string userEmail)
+    {
+        UserEmail = userEmail;
+        SessionId = null;
+        ClearError();
+    }
+
+    /// <summary>
+    /// Initialize for anonymous session
+    /// </summary>
+    public void InitializeForAnonymous(Guid sessionId)
+    {
+        UserEmail = null;
+        SessionId = sessionId;
+        ClearError();
+    }
+
+    /// <summary>
+    /// Set current question and update progress
+    /// </summary>
     public void SetCurrentQuestion(DiagnosticQuestion question, int questionNumber)
     {
         CurrentQuestion = question;
         QuestionNumber = questionNumber;
         CurrentPhase = GetPhaseFromQuestionNumber(questionNumber);
-        CurrentAnswer = null;
-        LastActivity = DateTime.UtcNow;
+        CurrentAnswer = null; // Reset current answer
+        ClearError();
     }
 
-    public void SetProcessingAnswer(bool isProcessing, bool? answer = null)
+    /// <summary>
+    /// Set processing state for current answer
+    /// </summary>
+    public void SetProcessingAnswer(bool isProcessing, bool? currentAnswer = null)
     {
         IsProcessingAnswer = isProcessing;
-        CurrentAnswer = answer;
-        if (isProcessing)
-            LastActivity = DateTime.UtcNow;
+        if (currentAnswer.HasValue)
+        {
+            CurrentAnswer = currentAnswer;
+        }
     }
 
-    public void SetError(string message)
+    /// <summary>
+    /// Set error state
+    /// </summary>
+    public void SetError(string errorMessage)
     {
         HasError = true;
-        ErrorMessage = message;
-        IsLoading = false;
-        IsProcessingAnswer = false;
+        ErrorMessage = errorMessage;
     }
 
+    /// <summary>
+    /// Clear error state
+    /// </summary>
     public void ClearError()
     {
         HasError = false;
         ErrorMessage = null;
     }
 
+    /// <summary>
+    /// Update session health information
+    /// </summary>
     public void UpdateSessionInfo(string timeRemaining)
     {
         SessionTimeRemaining = timeRemaining;
         LastActivity = DateTime.UtcNow;
     }
-    
+
     /// <summary>
-    /// Initialize for authenticated user
+    /// Get phase number from question number (1-5: Phase 1, 6-10: Phase 2, 11-15: Phase 3)
     /// </summary>
-    public void InitializeForUser(string userEmail)
+    private static int GetPhaseFromQuestionNumber(int questionNumber)
     {
-        UserEmail = userEmail;
-        SessionId = null; // Clear session ID for authenticated users
+        return questionNumber switch
+        {
+            <= 5 => 1,
+            <= 10 => 2,
+            <= 15 => 3,
+            _ => 3
+        };
     }
+}
+
+/// <summary>
+/// ViewModel for history page managing user recommendations with pagination
+/// </summary>
+public class HistoryViewModel
+{
+    public List<RecommendationEntity> Recommendations { get; set; } = new();
+    public bool IsLoading { get; set; } = false;
+    public bool HasError { get; set; } = false;
+    public string? ErrorMessage { get; set; }
     
+    // Pagination
+    public int CurrentPage { get; set; } = 1;
+    public int PageSize { get; set; } = 10;
+    public int TotalCount { get; set; } = 0;
+    public int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
+    
+    // Selected recommendation for modal
+    public RecommendationEntity? SelectedRecommendation { get; set; }
+
     /// <summary>
-    /// Initialize for anonymous user
-    /// </summary> 
-    public void InitializeForAnonymous(Guid sessionId)
+    /// Indicates if there are any recommendations to display
+    /// </summary>
+    public bool HasRecommendations => Recommendations?.Any() == true;
+
+    /// <summary>
+    /// Set recommendations from paged result
+    /// </summary>
+    public void SetRecommendations(PagedResult<RecommendationEntity> pagedResult)
     {
-        SessionId = sessionId;
-        UserEmail = null; // Clear user email for anonymous users
+        Recommendations = pagedResult.Items.ToList();
+        CurrentPage = pagedResult.Page;
+        TotalCount = pagedResult.TotalCount;
+        ClearError();
     }
 
-    private int GetPhaseFromQuestionNumber(int questionNumber) => ((questionNumber - 1) / 5) + 1;
+    /// <summary>
+    /// Set selected recommendation for modal display
+    /// </summary>
+    public void SetSelectedRecommendation(RecommendationEntity recommendation)
+    {
+        SelectedRecommendation = recommendation;
+    }
+
+    /// <summary>
+    /// Clear selected recommendation (close modal)
+    /// </summary>
+    public void ClearSelectedRecommendation()
+    {
+        SelectedRecommendation = null;
+    }
+
+    /// <summary>
+    /// Set error state
+    /// </summary>
+    public void SetError(string errorMessage)
+    {
+        HasError = true;
+        ErrorMessage = errorMessage;
+    }
+
+    /// <summary>
+    /// Clear error state
+    /// </summary>
+    public void ClearError()
+    {
+        HasError = false;
+        ErrorMessage = null;
+    }
+
+    /// <summary>
+    /// Check if current page has previous pages
+    /// </summary>
+    public bool HasPreviousPage => CurrentPage > 1;
+
+    /// <summary>
+    /// Check if current page has next pages
+    /// </summary>
+    public bool HasNextPage => CurrentPage < TotalPages;
+
+    /// <summary>
+    /// Get display text for pagination info
+    /// </summary>
+    public string GetPaginationInfo()
+    {
+        if (TotalCount == 0)
+            return "Brak rekordów";
+
+        var startItem = (CurrentPage - 1) * PageSize + 1;
+        var endItem = Math.Min(CurrentPage * PageSize, TotalCount);
+        
+        return $"Wyświetlane {startItem}-{endItem} z {TotalCount}";
+    }
 }
 
 // Additional diagnostic progress model for auto-save

@@ -1,0 +1,42 @@
+/* History Page Styles */
+.formatted-recommendations {
+    line-height: 1.6;
+}
+
+.formatted-recommendations p {
+    margin-bottom: 1rem;
+}
+
+.formatted-recommendations strong {
+    color: #0d6efd;
+    font-weight: 600;
+}
+
+.recommendation-content {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.table-responsive {
+    border-radius: 0.375rem;
+}
+
+.table th {
+    font-weight: 600;
+    background-color: #f8f9fa;
+}
+
+.pagination .page-link {
+    border: 1px solid #dee2e6;
+    color: #0d6efd;
+}
+
+.pagination .page-link:hover {
+    background-color: #e9ecef;
+    border-color: #adb5bd;
+}
+
+.pagination .page-item.active .page-link {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+} 

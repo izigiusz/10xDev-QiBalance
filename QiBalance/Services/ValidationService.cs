@@ -68,7 +68,7 @@ namespace QiBalance.Services
         }
 
         /// <summary>
-        /// Validates user ID which should be a valid email address
+        /// Validates user ID which can be either a valid email address or a GUID
         /// </summary>
         public void ValidateUserId(string? userId)
         {
@@ -78,10 +78,18 @@ namespace QiBalance.Services
                 throw new ValidationException("Identyfikator użytkownika jest wymagany");
             }
 
+            // Check if it's a valid GUID first
+            if (Guid.TryParse(userId, out _))
+            {
+                // Valid GUID - this is acceptable for Supabase user IDs
+                return;
+            }
+
+            // If not a GUID, it should be a valid email
             if (!IsValidEmail(userId))
             {
-                _logger.LogWarning("UserId validation failed: invalid email format for {UserId}", userId);
-                throw new ValidationException("Identyfikator użytkownika musi być prawidłowym adresem email");
+                _logger.LogWarning("UserId validation failed: invalid format for {UserId} (not email or GUID)", userId);
+                throw new ValidationException("Identyfikator użytkownika musi być prawidłowym adresem email lub identyfikatorem GUID");
             }
         }
 

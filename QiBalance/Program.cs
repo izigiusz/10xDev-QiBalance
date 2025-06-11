@@ -16,12 +16,21 @@ namespace QiBalance
             builder.Services.AddRazorComponents()
                 .AddInteractiveServerComponents();
 
+            // Add Newtonsoft.Json for consistent serialization, which Supabase client respects
+            builder.Services.AddControllers().AddNewtonsoftJson(options =>
+            {
+                options.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore;
+            });
+
+            // Umożliwia dostęp do HttpContext w serwisach (potrzebne do odczytu cookie)
+            builder.Services.AddHttpContextAccessor();
+
             // Core Services - Infrastruktura
             builder.Services.AddScoped<IValidationService, ValidationService>();
             builder.Services.AddScoped<ISupabaseService, SupabaseService>();
             
-            // User Context Management
-            builder.Services.AddScoped<UserContext>();
+            // User Context Management - Singleton to share across interactive circuits
+            builder.Services.AddSingleton<UserContext>();
             
             // Authentication Services
             builder.Services.AddScoped<IAuthService, AuthService>();

@@ -2,18 +2,21 @@
 @rendermode InteractiveServer
 @using QiBalance.Models.DTOs
 @using QiBalance.Components.ViewModels
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
 @inject IJSRuntime JSRuntime
 @inject IDiagnosticService DiagnosticService
-@inject IAuthService AuthService
+@inject IRecommendationService RecommendationService
 @inject NavigationManager Navigation
 @inject ILogger<Diagnostic> Logger
+@inject AuthenticationStateProvider AuthStateProvider
 @implements IDisposable
 
 <PageTitle>Diagnoza TCM - QiBalance</PageTitle>
 
 <!-- Enhanced keyboard shortcuts info -->
-<div class="keyboard-shortcuts-hint position-fixed top-0 end-0 m-3 p-2 bg-light rounded shadow-sm" 
-     style="z-index: 1050; font-size: 0.8rem; opacity: 0.8;">
+<div class="keyboard-shortcuts-hint position-fixed end-0 m-3 p-2 bg-light rounded shadow-sm" 
+     style="top: 4rem; z-index: 1050; font-size: 0.8rem; opacity: 0.8;">
     <small class="text-muted">
         <i class="bi bi-keyboard"></i> Skróty: <kbd>T</kbd> - Tak, <kbd>N</kbd> - Nie, <kbd>Spacja</kbd> - Potwierdź
     </small>
@@ -257,19 +260,22 @@
             viewModel.LoadingMessage = "Przygotowywanie diagnozy...";
             StateHasChanged();
 
-            // Try to get user email - if null, proceed as anonymous user
-            var userEmail = await AuthService.GetCurrentUserEmailAsync();
-            
+            // Używaj tylko AuthenticationStateProvider
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            var userEmail = user.Identity is { IsAuthenticated: true }
+                ? user.FindFirst(c => c.Type == ClaimTypes.Email)?.Value
+                : null;
+
+            Logger.LogInformation("[DIAGNOSTIC] IsAuthenticated: {IsAuth}, Email: {Email}", user.Identity?.IsAuthenticated ?? false, userEmail ?? "null");
+
             if (!string.IsNullOrEmpty(userEmail))
             {
-                // Authenticated user flow
+                // Zalogowany użytkownik
                 viewModel.InitializeForUser(userEmail);
                 viewModel.LoadingMessage = "Pobieranie pytań diagnostycznych...";
                 StateHasChanged();
-                
-                Logger.LogInformation("Starting diagnostic for authenticated user: {UserEmail}", userEmail);
-                
-                // Load first question for authenticated user
+                Logger.LogInformation("[DIAGNOSTIC] Start for authenticated user: {UserEmail}", userEmail);
                 var firstQuestion = await DiagnosticService.GetNextQuestionAsync(userEmail, 1);
                 if (firstQuestion != null)
                 {
@@ -282,11 +288,10 @@
             }
             else
             {
-                // Anonymous user flow
+                // Tryb anonimowy
                 viewModel.LoadingMessage = "Rozpoczynanie diagnozy anonimowej...";
                 StateHasChanged();
-                
-                Logger.LogInformation("Starting diagnostic for anonymous user");
+                Logger.LogInformation("[DIAGNOSTIC] Start for anonymous user");
                 await StartAnonymousSessionAsync();
             }
         }
@@ -442,9 +447,34 @@
     {
         try
         {
+            // Always store in session storage for immediate display
             var recommendationsJson = System.Text.Json.JsonSerializer.Serialize(recommendations);
             await JSRuntime.InvokeVoidAsync("sessionStorage.setItem", "currentRecommendations", recommendationsJson);
             Logger.LogInformation("Recommendations stored successfully in session storage");
+
+            // For authenticated users, also save to database
+            if (!viewModel.IsAnonymous && !string.IsNullOrEmpty(viewModel.UserEmail))
+            {
+                try
+                {
+                    var savedRecommendation = await RecommendationService.SaveRecommendationAsync(
+                        viewModel.UserEmail, 
+                        recommendations);
+                    
+                    Logger.LogInformation("Recommendations saved to database for user: {UserEmail}, RecommendationId: {RecommendationId}", 
+                        viewModel.UserEmail, savedRecommendation.RecommendationId);
+                }
+                catch (Exception dbEx)
+                {
+                    Logger.LogError(dbEx, "Failed to save recommendations to database for user: {UserEmail}", viewModel.UserEmail);
+                    // Don't fail the entire flow if database save fails
+                    // User will still see recommendations and they can retry from history page
+                }
+            }
+            else
+            {
+                Logger.LogInformation("Anonymous user - recommendations not saved to database");
+            }
         }
         catch (Exception ex)
         {
