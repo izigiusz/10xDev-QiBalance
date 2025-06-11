@@ -17,7 +17,7 @@ namespace QiBalance.Services
         Task<Session?> SignInAsync(string email, string password);
         Task<Session?> SignUpAsync(string email, string password);
         Task SignOutAsync();
-        Task<User?> GetCurrentUserAsync();
+        
         bool IsAuthenticated { get; }
         event Action? AuthenticationStateChanged;
 
@@ -28,6 +28,7 @@ namespace QiBalance.Services
         Task ClearUserContextAsync();
         string? CurrentUserEmail { get; }
         Task<string?> GetCurrentUserIdAsync();
+        Task<Supabase.Gotrue.User?> GetCurrentUserAsync();
     }
 
     /// <summary>
@@ -41,14 +42,17 @@ namespace QiBalance.Services
         private readonly IValidationService _validationService;
         private readonly NavigationManager _navigationManager;
         private readonly IJSRuntime _jsRuntime;
+        private readonly Supabase.Client _client;
+        private readonly UserSessionState _userSessionState;
         
         public event Action? AuthenticationStateChanged;
         
-        public Supabase.Client Client => _supabaseService.Client;
+        public Supabase.Client Client => _client;
 
         public AuthService(ISupabaseService supabaseService, ILogger<AuthService> logger, 
                           UserContext userContext, IValidationService validationService,
-                          NavigationManager navigationManager, IJSRuntime jsRuntime)
+                          NavigationManager navigationManager, IJSRuntime jsRuntime,
+                          Supabase.Client client, UserSessionState userSessionState)
         {
             _supabaseService = supabaseService;
             _logger = logger;
@@ -56,6 +60,8 @@ namespace QiBalance.Services
             _validationService = validationService;
             _navigationManager = navigationManager;
             _jsRuntime = jsRuntime;
+            _client = client;
+            _userSessionState = userSessionState;
             
             // Subscribe to auth state changes
             _supabaseService.Client.Auth.AddStateChangedListener((sender, changed) =>
@@ -72,12 +78,18 @@ namespace QiBalance.Services
         {
             try
             {
-                var result = await _supabaseService.Client.Auth.SignIn(email, password);
+                var result = await _client.Auth.SignIn(email, password);
                 if (result != null)
                 {
                     // Set user context after successful login
                     await SetUserContextAsync(email);
-                    _logger.LogInformation("User signed in successfully: {Email}", email);
+                    _userSessionState.CurrentSession = result;
+                    _logger.LogInformation("User signed in successfully: {Email}, Session saved: {HasSession}", 
+                        email, _userSessionState.CurrentSession != null);
+                }
+                else
+                {
+                    _logger.LogWarning("Sign in failed for user: {Email} - no session returned", email);
                 }
                 return result;
             }
@@ -92,12 +104,18 @@ namespace QiBalance.Services
         {
             try
             {
-                var result = await _supabaseService.Client.Auth.SignUp(email, password);
+                var result = await _client.Auth.SignUp(email, password);
                 if (result != null)
                 {
                     // Set user context after successful registration
                     await SetUserContextAsync(email);
-                    _logger.LogInformation("User signed up successfully: {Email}", email);
+                    _userSessionState.CurrentSession = result;
+                    _logger.LogInformation("User signed up successfully: {Email}, Session saved: {HasSession}", 
+                        email, _userSessionState.CurrentSession != null);
+                }
+                else
+                {
+                    _logger.LogWarning("Sign up failed for user: {Email} - no session returned", email);
                 }
                 return result;
             }
@@ -112,8 +130,9 @@ namespace QiBalance.Services
         {
             try
             {
-                await _supabaseService.Client.Auth.SignOut();
+                await _client.Auth.SignOut();
                 await ClearUserContextAsync();
+                _userSessionState.CurrentSession = null;
                 
                 // Usuń cookie i przeładuj stronę
                 await _jsRuntime.InvokeVoidAsync("eval", "document.cookie = 'sb-access-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'");
@@ -127,10 +146,7 @@ namespace QiBalance.Services
             }
         }
 
-        public async Task<User?> GetCurrentUserAsync()
-        {
-            return await _supabaseService.GetCurrentUserAsync();
-        }
+        
 
         /// <summary>
         /// Validate session token and set user context
@@ -144,7 +160,7 @@ namespace QiBalance.Services
                     return new AuthResult { Success = false, Error = "Access token is required" };
                 }
 
-                var user = await _supabaseService.Client.Auth.GetUser(accessToken);
+                var user = await _client.Auth.GetUser(accessToken);
                 if (user?.Email != null)
                 {
                     await SetUserContextAsync(user.Email);
@@ -218,8 +234,52 @@ namespace QiBalance.Services
 
         public async Task<string?> GetCurrentUserIdAsync()
         {
-            var user = await _supabaseService.GetCurrentUserAsync();
-            return user?.Id;
+            var session = _userSessionState.CurrentSession ?? await _client.Auth.RetrieveSessionAsync();
+            _userSessionState.CurrentSession = session;
+            return session?.User?.Id;
+        }
+
+        public async Task<Supabase.Gotrue.User?> GetCurrentUserAsync()
+        {
+            try
+            {
+                _logger.LogInformation("Getting current user - checking session state...");
+                
+                // First try to get from our session state
+                var session = _userSessionState.CurrentSession;
+                if (session?.User != null)
+                {
+                    _logger.LogInformation("Retrieved user from session state: {UserId}", session.User.Id);
+                    return session.User;
+                }
+                _logger.LogInformation("No user in session state, trying Supabase...");
+
+                // Fallback: try to retrieve session from Supabase
+                session = await _client.Auth.RetrieveSessionAsync();
+                if (session?.User != null)
+                {
+                    _userSessionState.CurrentSession = session;
+                    _logger.LogInformation("Retrieved and cached user from Supabase: {UserId}", session.User.Id);
+                    return session.User;
+                }
+                _logger.LogInformation("No session from Supabase, trying SupabaseService...");
+
+                // Final fallback: try the original method
+                var user = await _supabaseService.GetCurrentUserAsync();
+                if (user != null)
+                {
+                    _logger.LogInformation("Retrieved user from SupabaseService: {UserId}", user.Id);
+                    return user;
+                }
+
+                _logger.LogWarning("No authenticated user found in any method");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting current user");
+                return null;
+            }
         }
 
         private async Task<AuthResult> HandleAuthResponse(Func<Task<Session?>> authAction)
@@ -227,7 +287,7 @@ namespace QiBalance.Services
             try
             {
                 var result = await authAction();
-                if (result != null)
+                if (result?.User?.Email != null)
                 {
                     // Set user context after successful login or registration
                     await SetUserContextAsync(result.User.Email);

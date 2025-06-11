@@ -46,40 +46,34 @@ namespace QiBalance.Services
     /// </summary>
     public class SupabaseService : ISupabaseService
     {
-        public Client Client { get; private set; }
+        private readonly Supabase.Client _client;
         private readonly ILogger<SupabaseService> _logger;
+        private readonly UserSessionState _userSessionState;
         private readonly IValidationService _validationService;
         private readonly IHttpContextAccessor _httpContextAccessor;
         
         private const string AccessTokenCookie = "sb-access-token";
         private const string RefreshTokenCookie = "sb-refresh-token";
         
-        public SupabaseService(ILogger<SupabaseService> logger, IValidationService validationService, IHttpContextAccessor httpContextAccessor)
+        public Supabase.Client Client => _client;
+
+        public SupabaseService(Supabase.Client client, ILogger<SupabaseService> logger, UserSessionState userSessionState, IValidationService validationService, IHttpContextAccessor httpContextAccessor)
         {
+            _client = client;
             _logger = logger;
+            _userSessionState = userSessionState;
             _validationService = validationService;
             _httpContextAccessor = httpContextAccessor;
-            
-            var url = Environment.GetEnvironmentVariable("SUPABASE_URL");
-            var key = Environment.GetEnvironmentVariable("SUPABASE_ANON_KEY");
-            
-            if (string.IsNullOrEmpty(url))
-                throw new InvalidOperationException("SUPABASE_URL environment variable is not set");
-            
-            if (string.IsNullOrEmpty(key))
-                throw new InvalidOperationException("SUPABASE_ANON_KEY environment variable is not set");
-            
-            if (!Uri.TryCreate(url, UriKind.Absolute, out _))
-                throw new InvalidOperationException("SUPABASE_URL is not a valid URL");
-            
-            var options = new Supabase.SupabaseOptions
-            {
-                AutoConnectRealtime = true,
-                AutoRefreshToken = true
-            };
+        }
 
-            Client = new Client(url, key, options);
-            _logger.LogInformation("Supabase client initialized with URL: {Url}", url);
+        private void EnsureSession()
+        {
+            var session = _userSessionState.CurrentSession;
+            if (session != null && _client.Auth.CurrentSession?.AccessToken != session.AccessToken)
+            {
+                _logger.LogDebug("Initializing Supabase client with active session for RLS.");
+                _client.Auth.SetSession(session.AccessToken, session.RefreshToken);
+            }
         }
 
         public async Task<bool> IsUserAuthenticatedAsync()
@@ -100,41 +94,8 @@ namespace QiBalance.Services
         {
             try
             {
-                await Client.InitializeAsync();
-                
-                // Try to get current user from active session
-                var currentUser = Client.Auth.CurrentUser;
-                
-                // If no current user, try to restore session from cookie (for Blazor Server)
-                if (currentUser == null)
-                {
-                    try
-                    {
-                        // Try to get token from HttpContext if available
-                        var httpContext = GetHttpContext();
-                        var token = httpContext?.Request.Cookies["sb-access-token"];
-                        
-                        if (!string.IsNullOrEmpty(token))
-                        {
-                            _logger.LogDebug("Attempting to restore Supabase session from token");
-                            
-                            // Get user with token and set session
-                            var user = await Client.Auth.GetUser(token);
-                            if (user != null)
-                            {
-                                // The GetUser call should automatically restore the session
-                                _logger.LogDebug("Successfully restored Supabase session for user: {UserId}", user.Id);
-                                return user;
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to restore session from token");
-                    }
-                }
-                
-                return currentUser;
+                EnsureSession();
+                return _client.Auth.CurrentUser;
             }
             catch (Exception ex)
             {
@@ -159,46 +120,19 @@ namespace QiBalance.Services
         }
 
         /// <summary>
-        /// Ensure Supabase.Client has a valid user session by restoring it from cookies if necessary.
-        /// </summary>
-        private async Task EnsureSupabaseSessionAsync()
-        {
-            // If we already have a current user in the client, nothing do to.
-            if (Client.Auth.CurrentUser != null)
-                return;
-
-            var httpContext = GetHttpContext();
-            var accessToken = httpContext?.Request.Cookies[AccessTokenCookie];
-            var refreshToken = httpContext?.Request.Cookies[RefreshTokenCookie];
-
-            if (!string.IsNullOrEmpty(accessToken) && !string.IsNullOrEmpty(refreshToken))
-            {
-                try
-                {
-                    _logger.LogDebug("Restoring Supabase session from cookies (access & refresh token)");
-                    await Client.Auth.SetSession(accessToken, refreshToken);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to restore Supabase session from cookies");
-                }
-            }
-        }
-
-        /// <summary>
         /// Get entity by ID with automatic RLS enforcement
         /// </summary>
         public async Task<T?> GetByIdAsync<T>(object id) where T : BaseModel, IEntity, new()
         {
             try
             {
-                await Client.InitializeAsync();
-                var result = await Client.From<T>().Where(x => x.Id!.Equals(id)).Single();
-                return result;
+                EnsureSession();
+                var response = await _client.From<T>().Where(x => x.Id == id).Single();
+                return response;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting entity by ID: {Id}", id);
+                _logger.LogError(ex, "Error getting entity of type {Type} with ID {Id}", typeof(T).Name, id);
                 return null;
             }
         }
@@ -210,9 +144,9 @@ namespace QiBalance.Services
         {
             try
             {
-                await Client.InitializeAsync();
-                var results = await Client.From<T>().Get();
-                return results.Models;
+                EnsureSession();
+                var response = await _client.From<T>().Get();
+                return response.Models;
             }
             catch (Exception ex)
             {
@@ -228,27 +162,9 @@ namespace QiBalance.Services
         {
             try
             {
-                await EnsureSupabaseSessionAsync();
-
-                // Ensure user is authenticated before any insert operation
-                var currentUser = await GetCurrentUserAsync();
-                if (currentUser == null)
-                {
-                    throw new UnauthorizedAccessException("No authenticated user session found. Cannot insert entity.");
-                }
-
-                _logger.LogDebug("Authenticated user {UserId} confirmed before insert.", currentUser.Id);
-                
-                await Client.InitializeAsync();
-                
-                var result = await Client.From<T>().Insert(entity);
-                var inserted = result.Model;
-                
-                if (inserted == null)
-                    throw new InvalidOperationException("Insert operation failed - no model returned");
-                
-                _logger.LogInformation("Successfully inserted entity of type {Type}", typeof(T).Name);
-                return inserted;
+                EnsureSession();
+                var response = await _client.From<T>().Insert(entity);
+                return response.Models.First();
             }
             catch (Exception ex)
             {
@@ -264,19 +180,9 @@ namespace QiBalance.Services
         {
             try
             {
-                await EnsureSupabaseSessionAsync();
-                // Ensure user is authenticated before any update operation
-                var currentUser = await GetCurrentUserAsync();
-                if (currentUser == null)
-                {
-                    throw new UnauthorizedAccessException("No authenticated user session found. Cannot update entity.");
-                }
-                
-                _logger.LogDebug("Authenticated user {UserId} confirmed before update.", currentUser.Id);
-
-                await Client.InitializeAsync();
-                var result = await Client.From<T>().Update(entity);
-                var updated = result.Model;
+                EnsureSession();
+                var response = await _client.From<T>().Update(entity);
+                var updated = response.Model;
                 
                 if (updated == null)
                     throw new InvalidOperationException("Update operation failed - no model returned");
@@ -298,19 +204,8 @@ namespace QiBalance.Services
         {
             try
             {
-                await EnsureSupabaseSessionAsync();
-                // Ensure user is authenticated before any delete operation
-                var currentUser = await GetCurrentUserAsync();
-                if (currentUser == null)
-                {
-                    throw new UnauthorizedAccessException("No authenticated user session found. Cannot delete entity.");
-                }
-
-                _logger.LogDebug("Authenticated user {UserId} confirmed before delete.", currentUser.Id);
-
-                await Client.InitializeAsync();
-                await Client.From<T>().Where(x => x.Id!.Equals(id)).Delete();
-                
+                EnsureSession();
+                await _client.From<T>().Where(x => x.Id == id).Delete();
                 _logger.LogInformation("Successfully deleted entity of type {Type} with ID {Id}", typeof(T).Name, id);
                 return true;
             }
@@ -330,17 +225,17 @@ namespace QiBalance.Services
             {
                 _validationService.ValidatePagination(page, limit);
                 
-                await Client.InitializeAsync();
+                EnsureSession();
                 
                 // Calculate offset
                 var offset = (page - 1) * limit;
                 
                 // Get total count first
-                var totalResults = await Client.From<T>().Get();
+                var totalResults = await _client.From<T>().Get();
                 var totalCount = totalResults.Models.Count;
                 
                 // Get paginated data with sorting
-                var query = Client.From<T>().Range(offset, offset + limit - 1);
+                var query = _client.From<T>().Range(offset, offset + limit - 1);
                 
                 if (!string.IsNullOrEmpty(sortBy))
                 {
@@ -379,7 +274,7 @@ namespace QiBalance.Services
             {
                 _validationService.ValidateUserId(userEmail);
                 
-                await Client.InitializeAsync();
+                EnsureSession();
                 
                 // TODO: RLS configuration will be implemented when database functions are available
                 // For now, we skip the RLS setup to allow authentication to work
@@ -406,7 +301,7 @@ namespace QiBalance.Services
         {
             try
             {
-                await Client.InitializeAsync();
+                EnsureSession();
                 
                 // TODO: RLS configuration will be implemented when database functions are available
                 // For now, we skip the RLS cleanup to allow authentication to work

@@ -3,6 +3,16 @@ using QiBalance.Services;
 
 namespace QiBalance.Services
 {
+    [Supabase.Postgrest.Attributes.Table("profiles")]
+    public class Profile : Supabase.Postgrest.Models.BaseModel
+    {
+        [Supabase.Postgrest.Attributes.PrimaryKey("id")]
+        public Guid Id { get; set; }
+
+        [Supabase.Postgrest.Attributes.Column("email")]
+        public string? Email { get; set; }
+    }
+
     public class DatabaseService : IDatabaseContext
     {
         private readonly ISupabaseService _supabaseService;
@@ -67,12 +77,12 @@ namespace QiBalance.Services
                     DateGenerated = recommendation.DateGenerated ?? DateTime.UtcNow
                 };
 
-                var response = await _supabaseService.Client
+                await _supabaseService.Client
                     .From<Recommendation>()
-                    .Upsert(newRecommendation);
+                    .Insert(newRecommendation);
                     
-                _logger.LogInformation("Created recommendation for user: {UserId}", recommendation.UserId);
-                return response.Models.First();
+                _logger.LogInformation("Created recommendation with ID {RecommendationId} for user: {UserId}", newRecommendation.RecommendationId, recommendation.UserId);
+                return newRecommendation;
             }
             catch (Exception ex)
             {
@@ -126,6 +136,24 @@ namespace QiBalance.Services
             {
                 _logger.LogError(ex, "Failed to delete recommendation: {RecommendationId} for user: {UserId}", recommendationId, userId);
                 return false;
+            }
+        }
+
+        public async Task<Guid?> GetUserIdByEmailAsync(string email)
+        {
+            try
+            {
+                // Since we don't have access to auth.users table from the client,
+                // and profiles table doesn't exist, we'll need to handle this differently.
+                // For now, we'll return null and let the calling code handle the fallback.
+                
+                _logger.LogWarning("Cannot retrieve user ID for email {Email} - auth.users table not accessible from client", email);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get user id for email: {Email}", email);
+                return null;
             }
         }
     }

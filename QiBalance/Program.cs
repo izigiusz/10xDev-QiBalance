@@ -1,81 +1,75 @@
-using QiBalance.Components;
-using QiBalance.Services;
-using QiBalance.Models;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.SemanticKernel;
+using QiBalance.Components;
+using QiBalance.Models;
+using QiBalance.Services;
 
-namespace QiBalance
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddRazorComponents()
+    .AddInteractiveServerComponents();
+
+builder.Services.AddControllers().AddNewtonsoftJson(options =>
 {
-    public class Program
-    {
-        public static void Main(string[] args)
-        {
-            var builder = WebApplication.CreateBuilder(args);
+    options.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore;
+});
 
-            // Add services to the container.
-            builder.Services.AddRazorComponents()
-                .AddInteractiveServerComponents();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<UserSessionState>();
+builder.Services.AddSingleton<UserContext>();
+builder.Services.AddScoped<AuthenticationStateProvider, SupabaseAuthenticationStateProvider>();
 
-            // Add Newtonsoft.Json for consistent serialization, which Supabase client respects
-            builder.Services.AddControllers().AddNewtonsoftJson(options =>
-            {
-                options.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore;
-            });
+// Core Services
+builder.Services.AddScoped<IValidationService, ValidationService>();
+builder.Services.AddScoped<ISupabaseService, SupabaseService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IDatabaseContext, DatabaseService>();
+builder.Services.AddScoped<IOpenAIService, OpenAIService>();
+builder.Services.AddScoped<IDiagnosticService, DiagnosticService>();
+builder.Services.AddScoped<IRecommendationService, RecommendationService>();
 
-            // Umożliwia dostęp do HttpContext w serwisach (potrzebne do odczytu cookie)
-            builder.Services.AddHttpContextAccessor();
 
-            // Core Services - Infrastruktura
-            builder.Services.AddScoped<IValidationService, ValidationService>();
-            builder.Services.AddScoped<ISupabaseService, SupabaseService>();
-            
-            // User Context Management - Singleton to share across interactive circuits
-            builder.Services.AddSingleton<UserContext>();
-            
-            // Authentication Services
-            builder.Services.AddScoped<IAuthService, AuthService>();
-            builder.Services.AddScoped<IDatabaseContext, DatabaseService>();
-            
-            // AI Services - Semantic Kernel Configuration
-            var openAIKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-            if (string.IsNullOrEmpty(openAIKey))
-            {
-                throw new InvalidOperationException("OPENAI_API_KEY environment variable is not set");
-            }
-            
-            builder.Services.AddKernel()
-                .AddOpenAIChatCompletion("gpt-4o-mini", openAIKey);
-            
-            builder.Services.AddScoped<IOpenAIService, OpenAIService>();
-            builder.Services.AddScoped<IDiagnosticService, DiagnosticService>();
-            builder.Services.AddScoped<IRecommendationService, RecommendationService>();
-            
-            // Dodaj dostawcę uwierzytelniania
-            builder.Services.AddScoped<AuthenticationStateProvider, SupabaseAuthenticationStateProvider>();
-            builder.Services.AddAuthorizationCore();
-            
-            // Caching dla sesji diagnostycznych
-            builder.Services.AddMemoryCache();
-
-            var app = builder.Build();
-
-            // Configure the HTTP request pipeline.
-            if (!app.Environment.IsDevelopment())
-            {
-                app.UseExceptionHandler("/Error");
-                // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-                app.UseHsts();
-            }
-
-            app.UseHttpsRedirection();
-
-            app.UseAntiforgery();
-
-            app.MapStaticAssets();
-            app.MapRazorComponents<App>()
-                .AddInteractiveServerRenderMode();
-
-            app.Run();
-        }
-    }
+var openAIKey = builder.Configuration["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+if (string.IsNullOrEmpty(openAIKey))
+{
+    throw new InvalidOperationException("OpenAI API key is not set. Check appsettings.json (OpenAI:ApiKey) or environment variables (OpenAI__ApiKey or OPENAI_API_KEY).");
 }
+
+builder.Services.AddKernel()
+    .AddOpenAIChatCompletion("gpt-4o-mini", openAIKey);
+
+
+builder.Services.AddScoped(sp =>
+{
+    var supabaseUrl = builder.Configuration["Supabase:Url"] ?? Environment.GetEnvironmentVariable("SUPABASE_URL");
+    if (string.IsNullOrEmpty(supabaseUrl))
+        throw new InvalidOperationException("Supabase URL is not configured. Check appsettings.json (Supabase:Url) or environment variables (SUPABASE_URL or Supabase__Url).");
+
+    var supabaseKey = builder.Configuration["Supabase:Key"] ?? Environment.GetEnvironmentVariable("SUPABASE_ANON_KEY");
+    if (string.IsNullOrEmpty(supabaseKey))
+        throw new InvalidOperationException("Supabase Key is not configured. Check appsettings.json (Supabase:Key) or environment variables (SUPABASE_ANON_KEY or Supabase__Key).");
+
+    return new Supabase.Client(supabaseUrl, supabaseKey);
+});
+
+builder.Services.AddAuthorizationCore();
+builder.Services.AddMemoryCache();
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Error", createScopeForErrors: true);
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseAntiforgery();
+
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode();
+
+app.Run();

@@ -24,7 +24,7 @@ namespace QiBalance.Models
         /// <summary>
         /// Implementation of IEntity.Id property
         /// </summary>
-        [PrimaryKey("recommendation_id")]
+        [PrimaryKey("recommendation_id", true)]
         [Supabase.Postgrest.Attributes.Column("recommendation_id")]
         public object? Id 
         { 
@@ -88,6 +88,7 @@ namespace QiBalance.Models
         Task<Recommendation> CreateRecommendationAsync(RecommendationInsert recommendation);
         Task<Recommendation?> UpdateRecommendationAsync(Guid recommendationId, RecommendationUpdate recommendation, string userId);
         Task<bool> DeleteRecommendationAsync(Guid recommendationId, string userId);
+        Task<Guid?> GetUserIdByEmailAsync(string email);
     }
 
     /// <summary>
