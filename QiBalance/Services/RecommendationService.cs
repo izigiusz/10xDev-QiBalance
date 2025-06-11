@@ -199,7 +199,18 @@ namespace QiBalance.Services
                         var fallbackUserIdString = await GetUserIdFromAuthStateAsync(userId);
                         if (!string.IsNullOrEmpty(fallbackUserIdString) && Guid.TryParse(fallbackUserIdString, out var fallbackUserGuidFromAuth))
                         {
+                            _logger.LogInformation("Using fallback UUID {FallbackUserId} for email {Email}", fallbackUserIdString, userId);
+                            
                             var fallbackRecommendations = await _databaseContext.GetRecommendationsAsync(fallbackUserIdString);
+                            
+                            _logger.LogInformation("Retrieved {Count} raw recommendations from database for UUID {UserId}", fallbackRecommendations.Count(), fallbackUserIdString);
+                            
+                            // Log details of each recommendation
+                            foreach (var rec in fallbackRecommendations.Take(3)) // Log first 3 for debugging
+                            {
+                                _logger.LogInformation("Raw recommendation: ID={RecommendationId}, UserId={UserId}, Date={Date}", 
+                                    rec.RecommendationId, rec.UserId, rec.DateGenerated);
+                            }
                             
                             var fallbackTotalCount = fallbackRecommendations.Count();
                             var fallbackPagedItems = fallbackRecommendations
@@ -207,6 +218,13 @@ namespace QiBalance.Services
                                 .Take(limit)
                                 .Select(r => MapToRecommendationEntity(r, userId))
                                 .ToList();
+
+                            // Log details of mapped entities
+                            foreach (var entity in fallbackPagedItems.Take(3)) // Log first 3 for debugging
+                            {
+                                _logger.LogInformation("Mapped entity: ID={RecommendationId}, UserId={UserId}, Date={Date}", 
+                                    entity.RecommendationId, entity.UserId, entity.DateGenerated);
+                            }
 
                             var fallbackResult = new PagedResult<RecommendationEntity>
                             {
@@ -435,13 +453,21 @@ namespace QiBalance.Services
         {
             try
             {
+                _logger.LogInformation("Attempting to get user ID from auth state for email: {Email}", userEmail);
+                
                 var authState = await _authStateProvider.GetAuthenticationStateAsync();
                 var user = authState.User;
+                
+                _logger.LogInformation("Auth state - IsAuthenticated: {IsAuth}, Identity: {Identity}", 
+                    user.Identity?.IsAuthenticated, user.Identity?.Name ?? "null");
                 
                 if (user.Identity?.IsAuthenticated == true)
                 {
                     var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                     var emailClaim = user.FindFirst(ClaimTypes.Email)?.Value;
+                    
+                    _logger.LogInformation("Claims - NameIdentifier: {UserId}, Email: {Email}", 
+                        userIdClaim ?? "null", emailClaim ?? "null");
                     
                     // Verify that the email matches
                     if (!string.IsNullOrEmpty(userIdClaim) && 
@@ -450,6 +476,11 @@ namespace QiBalance.Services
                     {
                         _logger.LogInformation("Retrieved user ID {UserId} from auth state for email {Email}", userIdClaim, userEmail);
                         return userIdClaim;
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Email mismatch or missing claims - Expected: {ExpectedEmail}, Found: {FoundEmail}, UserId: {UserId}", 
+                            userEmail, emailClaim, userIdClaim);
                     }
                 }
                 

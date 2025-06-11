@@ -36,6 +36,14 @@ namespace QiBalance.Services
                     .Get();
                     
                 _logger.LogDebug("Retrieved {Count} recommendations for user: {UserId}", response.Models.Count, userId);
+                
+                // Log raw data from database for debugging
+                foreach (var rec in response.Models.Take(3))
+                {
+                    _logger.LogInformation("DB Raw: RecommendationId={RecommendationId}, Id={Id}, UserId={UserId}", 
+                        rec.RecommendationId, rec.Id, rec.UserId);
+                }
+                
                 return response.Models;
             }
             catch (Exception ex)
@@ -52,7 +60,8 @@ namespace QiBalance.Services
                 var userGuid = Guid.Parse(userId);
                 var response = await _supabaseService.Client
                     .From<Recommendation>()
-                    .Where(r => r.RecommendationId == recommendationId && r.UserId == userGuid)
+                    .Filter("recommendation_id", Supabase.Postgrest.Constants.Operator.Equals, recommendationId.ToString())
+                    .Filter("user_id", Supabase.Postgrest.Constants.Operator.Equals, userGuid.ToString())
                     .Single();
                     
                 _logger.LogDebug("Retrieved recommendation: {RecommendationId} for user: {UserId}", recommendationId, userId);
@@ -105,7 +114,8 @@ namespace QiBalance.Services
 
                 var response = await _supabaseService.Client
                     .From<Recommendation>()
-                    .Where(r => r.RecommendationId == recommendationId && r.UserId == userGuid)
+                    .Filter("recommendation_id", Supabase.Postgrest.Constants.Operator.Equals, recommendationId.ToString())
+                    .Filter("user_id", Supabase.Postgrest.Constants.Operator.Equals, userGuid.ToString())
                     .Set(r => r.RecommendationText!, recommendation.RecommendationText!)
                     .Update();
                     
@@ -126,7 +136,8 @@ namespace QiBalance.Services
                 var userGuid = Guid.Parse(userId);
                 await _supabaseService.Client
                     .From<Recommendation>()
-                    .Where(r => r.RecommendationId == recommendationId && r.UserId == userGuid)
+                    .Filter("recommendation_id", Supabase.Postgrest.Constants.Operator.Equals, recommendationId.ToString())
+                    .Filter("user_id", Supabase.Postgrest.Constants.Operator.Equals, userGuid.ToString())
                     .Delete();
                     
                 _logger.LogInformation("Deleted recommendation: {RecommendationId} for user: {UserId}", recommendationId, userId);

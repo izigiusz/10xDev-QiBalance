@@ -29,7 +29,36 @@ namespace QiBalance.Models
         public object? Id 
         { 
             get => RecommendationId; 
-            set => RecommendationId = value is Guid guid ? guid : Guid.Empty; 
+            set 
+            {
+                if (value != null)
+                {
+                    if (value is Guid guid)
+                    {
+                        RecommendationId = guid;
+                    }
+                    else if (value is string stringValue && Guid.TryParse(stringValue, out var parsedGuid))
+                    {
+                        RecommendationId = parsedGuid;
+                    }
+                    else
+                    {
+                        // Try to convert other types to string first, then parse
+                        if (Guid.TryParse(value.ToString(), out var convertedGuid))
+                        {
+                            RecommendationId = convertedGuid;
+                        }
+                        else
+                        {
+                            RecommendationId = Guid.Empty;
+                        }
+                    }
+                }
+                else
+                {
+                    RecommendationId = Guid.Empty;
+                }
+            }
         }
 
         /// <summary>
