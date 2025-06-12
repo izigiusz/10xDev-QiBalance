@@ -29,7 +29,6 @@ builder.Services.AddScoped<IOpenAIService, OpenAIService>();
 builder.Services.AddScoped<IDiagnosticService, DiagnosticService>();
 builder.Services.AddScoped<IRecommendationService, RecommendationService>();
 
-
 var openAIKey = builder.Configuration["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
 if (string.IsNullOrEmpty(openAIKey))
 {
@@ -38,7 +37,6 @@ if (string.IsNullOrEmpty(openAIKey))
 
 builder.Services.AddKernel()
     .AddOpenAIChatCompletion("gpt-4o-mini", openAIKey);
-
 
 builder.Services.AddScoped(sp =>
 {

@@ -17,7 +17,6 @@ namespace QiBalance.Services
             _logger = logger;
             _httpContextAccessor = httpContextAccessor;
             
-            // Subscribe to auth state changes
             _authService.AuthenticationStateChanged += OnAuthenticationStateChanged;
         }
 
@@ -25,13 +24,21 @@ namespace QiBalance.Services
         {
             try
             {
-                // Najpierw spróbuj z bieżącej sesji klienta Supabase
+                // Sprawdź, czy flaga wylogowania jest w cookie
+                var httpContext = _httpContextAccessor.HttpContext;
+                if (httpContext?.Request.Cookies.ContainsKey("logout-in-progress") == true)
+                {
+                    _logger.LogInformation("Logout in progress detected, returning unauthenticated state.");
+                    // Usuń flagę, aby nie blokowała przyszłych logowań
+                    httpContext.Response.Cookies.Delete("logout-in-progress");
+                    return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
+                }
+
                 var user = await _authService.GetCurrentUserAsync();
 
-                // Jeśli nie ma, spróbuj odczytać token z cookie (dla nowego obwodu)
                 if (user == null)
                 {
-                    var token = _httpContextAccessor.HttpContext?.Request.Cookies["sb-access-token"];
+                    var token = httpContext?.Request.Cookies["sb-access-token"];
                     if (!string.IsNullOrEmpty(token))
                     {
                         _logger.LogInformation("Found auth token in cookie, attempting to restore session.");
@@ -47,25 +54,6 @@ namespace QiBalance.Services
                         new Claim(ClaimTypes.Email, user.Email ?? ""),
                         new Claim("sub", user.Id)
                     };
-
-                    // Add additional claims if available
-                    if (user.UserMetadata != null)
-                    {
-                        if (user.UserMetadata.ContainsKey("full_name") && user.UserMetadata["full_name"] != null)
-                        {
-                            claims.Add(new Claim(ClaimTypes.Name, user.UserMetadata["full_name"].ToString()!));
-                        }
-                        
-                        if (user.UserMetadata.ContainsKey("first_name") && user.UserMetadata["first_name"] != null)
-                        {
-                            claims.Add(new Claim(ClaimTypes.GivenName, user.UserMetadata["first_name"].ToString()!));
-                        }
-                        
-                        if (user.UserMetadata.ContainsKey("last_name") && user.UserMetadata["last_name"] != null)
-                        {
-                            claims.Add(new Claim(ClaimTypes.Surname, user.UserMetadata["last_name"].ToString()!));
-                        }
-                    }
 
                     var identity = new ClaimsIdentity(claims, "supabase");
                     var principal = new ClaimsPrincipal(identity);

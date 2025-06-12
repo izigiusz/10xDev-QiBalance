@@ -21,9 +21,17 @@
                             <i class="bi bi-person-circle me-1"></i>
                             @context.User.FindFirst(ClaimTypes.Email)?.Value
                         </span>
-                        <button class="btn btn-outline-danger btn-sm" @onclick="HandleLogout">
-                            <i class="bi bi-box-arrow-right me-1"></i>
-                            Wyloguj
+                        <button class="btn btn-outline-danger btn-sm" @onclick="HandleLogout" disabled="@isLoggingOut">
+                            @if (isLoggingOut)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                <span>Wylogowywanie...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-box-arrow-right me-1"></i>
+                                <span>Wyloguj</span>
+                            }
                         </button>
                     </Authorized>
                     <NotAuthorized>
@@ -53,10 +61,18 @@
 </div>
 
 @code {
+    private bool isLoggingOut = false;
+    
     private async Task HandleLogout()
     {
+        // Zapobiegaj wielokrotnym jednoczesnym wywołaniom
+        if (isLoggingOut) return;
+        
         try
         {
+            isLoggingOut = true;
+            StateHasChanged(); // Aktualizuj UI, aby pokazać stan ładowania
+            
             // Użyj dedykowanego serwisu uwierzytelniania
             await AuthService.SignOutAsync();
         }
@@ -64,6 +80,10 @@
         {
             // W przypadku błędu, po prostu przekieruj
             Navigation.NavigateTo("/", forceLoad: true);
+        }
+        finally
+        {
+            isLoggingOut = false;
         }
     }
 }

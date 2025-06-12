@@ -76,16 +76,14 @@
             
             if (result?.AccessToken != null)
             {
-                // Zapisz token w cookie
                 await JSRuntime.InvokeVoidAsync("eval", $"document.cookie = 'sb-access-token={result.AccessToken}; path=/; SameSite=Lax; max-age=3600'");
                 
-                // Powiadom i przeładuj stronę
                 if (AuthStateProvider is SupabaseAuthenticationStateProvider supabaseProvider)
                 {
                     supabaseProvider.NotifyAuthenticationStateChanged();
                 }
                 
-                Navigation.NavigateTo("/", forceLoad: true); // forceLoad jest kluczowe!
+                Navigation.NavigateTo("/", forceLoad: false);
             }
             else
             {

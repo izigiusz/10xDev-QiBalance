@@ -63,8 +63,7 @@ namespace QiBalance.Services
             _client = client;
             _userSessionState = userSessionState;
             
-            // Subscribe to auth state changes
-            _supabaseService.Client.Auth.AddStateChangedListener((sender, changed) =>
+            _client.Auth.AddStateChangedListener((sender, changed) =>
             {
                 _logger.LogDebug("Auth state changed: {State}", changed);
                 AuthenticationStateChanged?.Invoke();
@@ -84,6 +83,10 @@ namespace QiBalance.Services
                     // Set user context after successful login
                     await SetUserContextAsync(email);
                     _userSessionState.CurrentSession = result;
+                    
+                    // Powiadom o zmianie stanu uwierzytelniania
+                    AuthenticationStateChanged?.Invoke();
+                    
                     _logger.LogInformation("User signed in successfully: {Email}, Session saved: {HasSession}", 
                         email, _userSessionState.CurrentSession != null);
                 }
@@ -130,23 +133,27 @@ namespace QiBalance.Services
         {
             try
             {
+                _logger.LogInformation("Signing out user.");
                 await _client.Auth.SignOut();
-                await ClearUserContextAsync();
+                
                 _userSessionState.CurrentSession = null;
+                await ClearUserContextAsync();
                 
-                // Usuń cookie i przeładuj stronę
-                await _jsRuntime.InvokeVoidAsync("eval", "document.cookie = 'sb-access-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'");
+                // Ustaw cookie flagę, aby poinformować o wylogowaniu po przeładowaniu
+                await _jsRuntime.InvokeVoidAsync("eval", "document.cookie = 'logout-in-progress=true; path=/; max-age=10'");
+                
+                // Usuń cookie tokena
+                await _jsRuntime.InvokeVoidAsync("eval", "document.cookie = 'sb-access-token=; path=/; max-age=0'");
+                
                 _navigationManager.NavigateTo("/", forceLoad: true);
-                
-                _logger.LogInformation("User signed out successfully");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to sign out user");
+                // Nadal spróbuj przekierować
+                _navigationManager.NavigateTo("/", forceLoad: true);
             }
         }
-
-        
 
         /// <summary>
         /// Validate session token and set user context
