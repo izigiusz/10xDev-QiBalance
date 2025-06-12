@@ -7,6 +7,7 @@ namespace QiBalance.Components.ViewModels;
 /// </summary>
 public class DiagnosticViewModel
 {
+    public string InitialSymptoms { get; set; } = string.Empty;
     public DiagnosticQuestion? CurrentQuestion { get; set; }
     public int QuestionNumber { get; set; } = 1;
     public int TotalQuestions { get; set; } = 15;

@@ -147,7 +147,7 @@ namespace QiBalance.Services
             
             var prompt = $@"Jesteś ekspertem tradycyjnej medycyny chińskiej (TCM). Twoim celem jest zdiagnozowanie różnicowe syndromu według medycyny Chińskiej w celu przygotowania zaleceń dietetycznych. Osoba diagnozowana nie słyszała o Medycynie Chińskiej, uwzględnij to. Wygeneruj dokładnie 5 pytań typu tak/nie dla {phaseInfo.Name}.
 
-Objawy początkowe: {symptomsText}
+Weź po uwagę objawy początkowe: {symptomsText}
 
 {BuildPreviousAnswersText(previousAnswers)}
 

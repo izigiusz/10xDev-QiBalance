@@ -17,6 +17,7 @@ namespace QiBalance.Services
         Task<Session?> SignInAsync(string email, string password);
         Task<Session?> SignUpAsync(string email, string password);
         Task SignOutAsync();
+        Task SignOutWithoutRedirectAsync();
         
         bool IsAuthenticated { get; }
         event Action? AuthenticationStateChanged;
@@ -80,7 +81,18 @@ namespace QiBalance.Services
                 var result = await _client.Auth.SignIn(email, password);
                 if (result != null)
                 {
-                    // Set user context after successful login
+                    // Sprawdź czy email został potwierdzony
+                    if (result.User?.EmailConfirmedAt == null)
+                    {
+                        // Email nie został potwierdzony - wyloguj użytkownika
+                        await _client.Auth.SignOut();
+                        _logger.LogWarning("Sign in blocked for user: {Email} - email not confirmed", email);
+                        
+                        // Zwróć null aby wskazać niepowodzenie logowania
+                        return null;
+                    }
+                    
+                    // Email potwierdzony - ustaw kontekst użytkownika
                     await SetUserContextAsync(email);
                     _userSessionState.CurrentSession = result;
                     
@@ -110,11 +122,22 @@ namespace QiBalance.Services
                 var result = await _client.Auth.SignUp(email, password);
                 if (result != null)
                 {
-                    // Set user context after successful registration
-                    await SetUserContextAsync(email);
-                    _userSessionState.CurrentSession = result;
-                    _logger.LogInformation("User signed up successfully: {Email}, Session saved: {HasSession}", 
-                        email, _userSessionState.CurrentSession != null);
+                    // Sprawdź czy użytkownik wymaga potwierdzenia emaila
+                    if (result.User?.EmailConfirmedAt == null)
+                    {
+                        // Użytkownik wymaga potwierdzenia emaila - nie ustawiaj kontekstu
+                        _logger.LogInformation("User signed up successfully but requires email confirmation: {Email}", email);
+                        
+                        // Nie ustawiamy sesji ani kontekstu użytkownika
+                        // Użytkownik będzie mógł się zalogować dopiero po potwierdzeniu emaila
+                    }
+                    else
+                    {
+                        // Email już potwierdzony (rzadki przypadek) - ustaw kontekst
+                        await SetUserContextAsync(email);
+                        _userSessionState.CurrentSession = result;
+                        _logger.LogInformation("User signed up with confirmed email: {Email}", email);
+                    }
                 }
                 else
                 {
@@ -133,7 +156,22 @@ namespace QiBalance.Services
         {
             try
             {
-                _logger.LogInformation("Signing out user.");
+                await SignOutWithoutRedirectAsync();
+                _navigationManager.NavigateTo("/", forceLoad: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to sign out user");
+                // Nadal spróbuj przekierować
+                _navigationManager.NavigateTo("/", forceLoad: true);
+            }
+        }
+
+        public async Task SignOutWithoutRedirectAsync()
+        {
+            try
+            {
+                _logger.LogInformation("Signing out user without redirect.");
                 await _client.Auth.SignOut();
                 
                 _userSessionState.CurrentSession = null;
@@ -144,14 +182,11 @@ namespace QiBalance.Services
                 
                 // Usuń cookie tokena
                 await _jsRuntime.InvokeVoidAsync("eval", "document.cookie = 'sb-access-token=; path=/; max-age=0'");
-                
-                _navigationManager.NavigateTo("/", forceLoad: true);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to sign out user");
-                // Nadal spróbuj przekierować
-                _navigationManager.NavigateTo("/", forceLoad: true);
+                _logger.LogError(ex, "Failed to sign out user without redirect");
+                throw;
             }
         }
 

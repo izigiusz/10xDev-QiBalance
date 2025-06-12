@@ -1,19 +1,73 @@
 ﻿@page "/"
+@inject NavigationManager Navigation
+@inject ILogger<Home> Logger
 
-<PageTitle>QiBalance - Odkryj Równowagę Swojego Ciała</PageTitle>
+<PageTitle>QiBalance - Rozpocznij Poradę</PageTitle>
 
-<div class="container mt-5">
+<div class="container mt-4">
     <div class="row justify-content-center text-center">
         <div class="col-lg-8">
-            <h1 class="display-4 fw-bold mb-3">
-                <i class="bi bi-yin-yang me-2"></i> Odkryj wewnętrzną harmonię z QiBalance
+            <h1 class="display-5 fw-bold mb-3">
+                Odkryj wewnętrzną harmonię z QiBalance
             </h1>
             <p class="lead text-muted mb-4">
-                QiBalance to nowoczesna aplikacja oparta na tysiącletniej mądrości Tradycyjnej Medycyny Chińskiej (TCM). Nasz inteligentny system diagnozy pomoże Ci zrozumieć potrzeby Twojego organizmu i wskaże drogę do odzyskania naturalnej równowagi energetycznej Qi.
-            </p>
-            <p class="lead mb-4">
-                Odpowiedz na serię pytań, a otrzymasz spersonalizowane rekomendacje dotyczące diety, ziół i stylu życia, które pomogą Ci poczuć się lepiej.
+                Wprowadź swoje objawy, aby otrzymać spersonalizowane pytania, lub przejdź od razu do ogólnej diagnozy, aby odkryć drogę do równowagi energetycznej Qi.
             </p>
         </div>
     </div>
+
+    <div class="row justify-content-center mt-3">
+        <div class="col-lg-7">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4">
+                    <h5 class="card-title mb-3">Wprowadź swoje objawy</h5>
+                    <div class="form-floating">
+                        <textarea @bind="symptoms"
+                                  @bind:event="oninput"
+                                  class="form-control"
+                                  placeholder="Opisz, co Ci dolega (np. ból głowy, problemy ze snem, zmęczenie)..."
+                                  id="symptomsTextarea"
+                                  maxlength="@maxChars"
+                                  style="height: 150px"></textarea>
+                        <label for="symptomsTextarea">Opisz, co Ci dolega...</label>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2">
+                        <small class="text-muted">
+                            Wpisanie objawów jest opcjonalne.
+                        </small>
+                        <small class="text-muted @(remainingChars < 0 ? "text-danger" : "")">
+                            @remainingChars / @maxChars
+                        </small>
+                    </div>
+                    <div class="d-grid mt-4">
+                        <button class="btn btn-primary btn-lg" @onclick="StartDiagnosis">
+                            <i class="bi bi-play-circle me-2"></i>
+                            Rozpocznij Poradę
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+
+@code {
+    private string symptoms = string.Empty;
+    private const int maxChars = 1000;
+    private int remainingChars => maxChars - symptoms.Length;
+
+    private void StartDiagnosis()
+    {
+        try
+        {
+            var encodedSymptoms = Uri.EscapeDataString(symptoms);
+            Navigation.NavigateTo($"/diagnostic?symptoms={encodedSymptoms}");
+            Logger.LogInformation("Rozpoczynanie diagnozy z objawami: {Symptoms}", symptoms);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Błąd podczas rozpoczynania diagnozy.");
+            // Opcjonalnie: Pokaż błąd użytkownikowi
+        }
+    }
+}

@@ -65,6 +65,12 @@
 
                     <div class="text-center mt-3">
                         <p>Masz już konto? <a href="/login">Zaloguj się</a></p>
+                        <hr>
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle"></i>
+                            Po rejestracji otrzymasz email z linkiem potwierdzającym. 
+                            Kliknij w link, aby aktywować konto i móc się zalogować.
+                        </small>
                     </div>
                 </div>
             </div>
@@ -96,19 +102,20 @@
             
             if (result != null)
             {
-                successMessage = "Konto zostało utworzone! Sprawdź swój email w celu potwierdzenia.";
+                successMessage = "Konto zostało utworzone! Sprawdź swój email w celu potwierdzenia. Dopiero po potwierdzeniu będziesz mógł się zalogować.";
                 
-                // Jeśli użytkownik został automatycznie zalogowany
+                // Wyloguj użytkownika jeśli został automatycznie zalogowany
                 if (result.User != null)
                 {
-                    if (AuthStateProvider is SupabaseAuthenticationStateProvider supabaseProvider)
-                    {
-                        supabaseProvider.NotifyAuthenticationStateChanged();
-                    }
-                    
-                    // Opcjonalnie przekieruj do strony głównej
-                    // Navigation.NavigateTo("/");
+                    await AuthService.SignOutWithoutRedirectAsync();
                 }
+                
+                // Wyczyść formularz po udanej rejestracji
+                registerModel = new RegisterModel();
+                
+                // Przekieruj na stronę logowania po 2 sekundach
+                await Task.Delay(2000);
+                Navigation.NavigateTo("/login");
             }
             else
             {

@@ -128,6 +128,9 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "symptoms")]
+    public string? Symptoms { get; set; }
+
     private DiagnosticViewModel viewModel = new();
     private Timer? sessionValidationTimer;
     private Timer? autoSaveTimer;
@@ -141,6 +144,7 @@
     protected override async Task OnInitializedAsync()
     {
         InitializeKeyboardShortcuts();
+        viewModel.InitialSymptoms = Symptoms ?? string.Empty;
         await InitializeDiagnosticAsync();
         StartSessionValidation();
         StartAutoSave();
@@ -273,17 +277,17 @@
             {
                 // Zalogowany użytkownik
                 viewModel.InitializeForUser(userEmail);
-                viewModel.LoadingMessage = "Pobieranie pytań diagnostycznych...";
+                viewModel.LoadingMessage = "Rozpoczynanie diagnozy z objawami...";
                 StateHasChanged();
-                Logger.LogInformation("[DIAGNOSTIC] Start for authenticated user: {UserEmail}", userEmail);
-                var firstQuestion = await DiagnosticService.GetNextQuestionAsync(userEmail, 1);
-                if (firstQuestion != null)
+                Logger.LogInformation("[DIAGNOSTIC] Start for authenticated user: {UserEmail} with symptoms: {Symptoms}", userEmail, viewModel.InitialSymptoms);
+                var session = await DiagnosticService.StartUserSessionAsync(userEmail, viewModel.InitialSymptoms);
+                if (session.Questions.Any())
                 {
-                    viewModel.SetCurrentQuestion(firstQuestion, 1);
+                    viewModel.SetCurrentQuestion(session.Questions.First(), 1);
                 }
                 else
                 {
-                    throw new InvalidOperationException("Nie udało się pobrać pierwszego pytania");
+                    throw new InvalidOperationException("Nie udało się wygenerować pytań diagnostycznych");
                 }
             }
             else
@@ -291,7 +295,7 @@
                 // Tryb anonimowy
                 viewModel.LoadingMessage = "Rozpoczynanie diagnozy anonimowej...";
                 StateHasChanged();
-                Logger.LogInformation("[DIAGNOSTIC] Start for anonymous user");
+                Logger.LogInformation("[DIAGNOSTIC] Start for anonymous user with symptoms: {Symptoms}", viewModel.InitialSymptoms);
                 await StartAnonymousSessionAsync();
             }
         }
@@ -311,8 +315,8 @@
     {
         try
         {
-            // Start anonymous session with empty symptoms (can be enhanced later)
-            var session = await DiagnosticService.StartAnonymousSessionAsync(initialSymptoms: "");
+            // Start anonymous session with symptoms from user input
+            var session = await DiagnosticService.StartAnonymousSessionAsync(initialSymptoms: viewModel.InitialSymptoms);
             
             viewModel.InitializeForAnonymous(session.SessionId);
             

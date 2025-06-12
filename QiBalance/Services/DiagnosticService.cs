@@ -31,6 +31,9 @@ namespace QiBalance.Services
         Task<DiagnosticResponse> SubmitAnswerBySessionAsync(Guid sessionId, int questionNumber, bool answer);
         Task<bool> ValidateSessionByIdAsync(Guid sessionId);
         Task<DiagnosticSessionInfo?> GetSessionInfoByIdAsync(Guid sessionId);
+
+        // New method for authenticated users
+        Task<DiagnosticSession> StartUserSessionAsync(string userEmail, string? initialSymptoms);
     }
 
     /// <summary>
@@ -735,6 +738,48 @@ namespace QiBalance.Services
         public async Task<DiagnosticSession> StartAnonymousSessionAsync(string? initialSymptoms)
         {
             return await StartSessionAsync(initialSymptoms, userId: null);
+        }
+
+        /// <summary>
+        /// Start diagnostic session for authenticated user with symptoms
+        /// </summary>
+        public async Task<DiagnosticSession> StartUserSessionAsync(string userEmail, string? initialSymptoms)
+        {
+            try
+            {
+                _validationService.ValidateUserId(userEmail);
+                
+                // Get the actual user GUID from AuthenticationStateProvider
+                var authState = await _authStateProvider.GetAuthenticationStateAsync();
+                var user = authState.User;
+                
+                if (!user.Identity?.IsAuthenticated == true)
+                {
+                    throw new UnauthorizedAccessException("User not authenticated");
+                }
+
+                var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userId))
+                {
+                    throw new InvalidOperationException("UserId not found in claims");
+                }
+
+                // Create new session with symptoms and proper userId (GUID)
+                var session = await StartSessionAsync(initialSymptoms, userId);
+                
+                // Cache it with email-based key for user-based lookup
+                var userCacheKey = GetUserSessionCacheKey(userEmail);
+                _cache.Set(userCacheKey, session, TimeSpan.FromHours(SessionTimeoutHours));
+                
+                _logger.LogInformation("User session created for {UserEmail} with symptoms: {Symptoms}", userEmail, initialSymptoms ?? "none");
+                
+                return session;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error starting user session for: {UserEmail}", userEmail);
+                throw;
+            }
         }
 
         /// <summary>
