@@ -1,19 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Lora:wght@400;700&display=swap');
+
 html, body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-family: 'Lato', sans-serif;
+    background-color: #F5F5DC; /* Earth/Metal Element: Beige */
+    color: #343434; /* Water Element: Dark Graphite */
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Lora', serif;
 }
 
 a, .btn-link {
-    color: #006bb7;
+    color: #556B2F; /* Wood Element: Sage Green */
 }
 
 .btn-primary {
     color: #fff;
-    background-color: #1b6ec2;
-    border-color: #1861ac;
+    background-color: #556B2F; /* Wood Element: Sage Green */
+    border-color: #4A5D2A; /* Darker shade for border */
+}
+
+.btn-primary:hover {
+    background-color: #4A5D2A;
+    border-color: #3E4C24;
+}
+
+.btn-danger {
+    color: #fff;
+    background-color: #8B0000; /* Fire Element: Dark Red */
+    border-color: #7A0000;
 }
 
 .btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
+  box-shadow: 0 0 0 0.1rem #F5F5DC, 0 0 0 0.25rem #D2B48C; /* Earth/Metal: Sand */
 }
 
 .content {
@@ -29,11 +48,11 @@ h1:focus {
 }
 
 .invalid {
-    outline: 1px solid #e50000;
+    outline: 1px solid #8B0000; /* Fire Element: Dark Red */
 }
 
 .validation-message {
-    color: #e50000;
+    color: #8B0000; /* Fire Element: Dark Red */
 }
 
 .blazor-error-boundary {
@@ -45,6 +64,81 @@ h1:focus {
     .blazor-error-boundary::after {
         content: "An error has occurred."
     }
+
+/* Bootstrap Overrides for TCM Theme */
+.bg-primary {
+    background-color: #556B2F !important; /* Wood Element: Sage Green */
+}
+
+.text-primary {
+    color: #556B2F !important; /* Wood Element: Sage Green */
+}
+
+.btn-outline-primary {
+    color: #556B2F;
+    border-color: #556B2F;
+}
+
+.btn-outline-primary:hover {
+    color: #fff;
+    background-color: #556B2F;
+    border-color: #556B2F;
+}
+
+.badge.bg-info {
+    background-color: #8B0000 !important; /* Fire Element: Dark Red */
+}
+
+.alert-success {
+    background-color: #E9F0E5; /* Light Sage Green */
+    color: #3E4C24; /* Darker Sage Green */
+    border-color: #D2E0C9;
+}
+
+.alert-info {
+    background-color: #FDF8E1; /* Light Sand */
+    color: #6B5B3E; /* Darker Sand */
+    border-color: #F9EFCB;
+}
+
+.alert-warning {
+    background-color: #FDF8E1; /* Light Sand */
+    color: #6B5B3E; /* Darker Sand */
+    border-color: #F9EFCB;
+}
+
+.badge.bg-success {
+    background-color: #556B2F !important; /* Wood Element: Sage Green */
+}
+
+.badge.bg-warning {
+    background-color: #D2B48C !important; /* Earth/Metal: Sand */
+    color: #343434 !important;
+}
+
+.badge.bg-danger {
+    background-color: #8B0000 !important; /* Fire Element: Dark Red */
+}
+
+.btn-success {
+    background-color: #556B2F !important; /* Wood Element: Sage Green */
+    border-color: #4A5D2A !important;
+}
+
+.btn-success:hover {
+    background-color: #4A5D2A !important;
+    border-color: #3E4C24 !important;
+}
+
+.btn-danger {
+    background-color: #8B0000 !important; /* Fire Element: Dark Red */
+    border-color: #7A0000 !important;
+}
+
+.btn-danger:hover {
+    background-color: #7A0000 !important;
+    border-color: #690000 !important;
+}
 
 .darker-border-checkbox.form-check-input {
     border-color: #929292;

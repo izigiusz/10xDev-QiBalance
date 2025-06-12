@@ -76,7 +76,6 @@
                                     <thead class="table-light">
                                         <tr>
                                             <th scope="col" class="border-0">Data</th>
-                                            <th scope="col" class="border-0">Syndrom TCM</th>
                                             <th scope="col" class="border-0 d-none d-md-table-cell">Podgląd</th>
                                             <th scope="col" class="border-0">Akcje</th>
                                         </tr>
@@ -91,13 +90,8 @@
                                                         <small class="text-muted">@recommendation.DateGenerated.ToString("HH:mm")</small>
                                                     </div>
                                                 </td>
-                                                <td class="py-3">
-                                                    <span class="badge bg-info text-white">
-                                                        @GetTcmSyndromeFromText(recommendation.RecommendationText)
-                                                    </span>
-                                                </td>
                                                 <td class="py-3 d-none d-md-table-cell">
-                                                    <div class="text-truncate" style="max-width: 200px;">
+                                                    <div class="text-truncate" style="max-width: 350px;">
                                                         @GetRecommendationPreview(recommendation.RecommendationText)
                                                     </div>
                                                 </td>
@@ -461,27 +455,25 @@
         return "Syndrom TCM";
     }
 
-    private string GetRecommendationPreview(string recommendationText)
+    private string GetRecommendationPreview(string text)
     {
-        if (string.IsNullOrEmpty(recommendationText))
-            return "Brak podglądu";
-
-        // Usuń formatowanie markdown
-        var cleanText = recommendationText
-            .Replace("**", "")
-            .Replace("*", "")
-            .Replace("#", "")
-            .Replace("\n", " ")
-            .Trim();
-
-        // Zwróć pierwsze zdanie lub max 100 znaków
-        var firstSentence = cleanText.Split('.').FirstOrDefault()?.Trim();
-        if (!string.IsNullOrEmpty(firstSentence) && firstSentence.Length <= 100)
+        if (string.IsNullOrEmpty(text))
         {
-            return firstSentence + ".";
+            return string.Empty;
         }
 
-        return cleanText.Length > 100 ? cleanText.Substring(0, 97) + "..." : cleanText;
+        // Zwiększamy długość podglądu do 150 znaków
+        const int previewLength = 150;
+
+        // Usuwamy formatowanie markdown dla czystszego podglądu
+        var cleanText = System.Text.RegularExpressions.Regex.Replace(text, @"[\*#_`]", "").Trim();
+        
+        if (cleanText.Length > previewLength)
+        {
+            return cleanText.Substring(0, previewLength) + "...";
+        }
+        
+        return cleanText;
     }
 
     private string FormatRecommendationText(string text)

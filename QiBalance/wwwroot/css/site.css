@@ -8,7 +8,7 @@
 }
 
 .formatted-recommendations strong {
-    color: #0d6efd;
+    color: #556B2F; /* Wood Element: Sage Green */
     font-weight: 600;
 }
 
@@ -23,20 +23,23 @@
 
 .table th {
     font-weight: 600;
-    background-color: #f8f9fa;
+    background-color: #E9E4D9; /* Lighter beige for contrast */
+    color: #343434; /* Water Element: Dark Graphite */
 }
 
 .pagination .page-link {
-    border: 1px solid #dee2e6;
-    color: #0d6efd;
+    border: 1px solid #D2B48C; /* Earth/Metal: Sand */
+    color: #556B2F; /* Wood Element: Sage Green */
+    background-color: #F5F5DC; /* Earth/Metal Element: Beige */
 }
 
 .pagination .page-link:hover {
-    background-color: #e9ecef;
-    border-color: #adb5bd;
+    background-color: #E9E4D9;
+    border-color: #C8A97E;
 }
 
 .pagination .page-item.active .page-link {
-    background-color: #0d6efd;
-    border-color: #0d6efd;
+    background-color: #556B2F; /* Wood Element: Sage Green */
+    border-color: #556B2F; /* Wood Element: Sage Green */
+    color: #FFFFFF;
 } 
