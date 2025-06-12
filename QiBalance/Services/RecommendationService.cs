@@ -52,11 +52,21 @@ namespace QiBalance.Services
         /// <summary>
         /// Save AI-generated recommendation for authenticated user
         /// Creates or updates recommendation entity with user authorization
+        /// Includes deduplication logic to prevent saving duplicate recommendations
         /// </summary>
         public async Task<RecommendationEntity> SaveRecommendationAsync(string userId, RecommendationResult recommendationResult)
         {
             try
             {
+                // Check for duplicate recommendations first
+                var existingRecommendation = await CheckForDuplicateRecommendationAsync(userId, recommendationResult);
+                if (existingRecommendation != null)
+                {
+                    _logger.LogInformation("Duplicate recommendation detected for user: {UserId}. Returning existing recommendation: {RecommendationId}", 
+                        userId, existingRecommendation.RecommendationId);
+                    return existingRecommendation;
+                }
+
                 var currentUser = await _authService.GetCurrentUserAsync();
                 
                 // If no current user but userId is a valid GUID or email, this might be a session timeout during diagnostic
@@ -444,6 +454,54 @@ namespace QiBalance.Services
                 DateGenerated = recommendation.DateGenerated,
                 RecommendationText = recommendation.RecommendationText
             };
+        }
+
+        /// <summary>
+        /// Check for duplicate recommendations to prevent saving the same recommendation twice
+        /// Compares recommendation text and creation time within a reasonable window
+        /// </summary>
+        private async Task<RecommendationEntity?> CheckForDuplicateRecommendationAsync(string userId, RecommendationResult recommendationResult)
+        {
+            try
+            {
+                // Get recent recommendations (last 10 minutes) for the user
+                var recentRecommendations = await GetUserRecommendationsAsync(userId, page: 1, limit: 5, sort: SortOrder.DateDesc);
+                
+                var duplicateTimeWindow = TimeSpan.FromMinutes(10);
+                var currentTime = DateTime.UtcNow;
+                
+                foreach (var existing in recentRecommendations.Items)
+                {
+                    // Check if recommendation was created within the duplicate time window
+                    var timeDifference = currentTime - existing.DateGenerated;
+                    if (timeDifference <= duplicateTimeWindow)
+                    {
+                        // Check if recommendation text is similar (first 200 characters)
+                        var existingTextSample = existing.RecommendationText.Length > 200 
+                            ? existing.RecommendationText.Substring(0, 200)
+                            : existing.RecommendationText;
+                        
+                        var newTextSample = recommendationResult.RecommendationText.Length > 200
+                            ? recommendationResult.RecommendationText.Substring(0, 200)
+                            : recommendationResult.RecommendationText;
+                        
+                        if (string.Equals(existingTextSample, newTextSample, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.LogWarning("Duplicate recommendation detected within {Minutes} minutes for user: {UserId}", 
+                                duplicateTimeWindow.TotalMinutes, userId);
+                            return existing;
+                        }
+                    }
+                }
+                
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking for duplicate recommendations for user: {UserId}", userId);
+                // In case of error, don't block saving - return null to allow new recommendation
+                return null;
+            }
         }
 
         /// <summary>
