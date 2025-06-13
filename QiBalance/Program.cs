@@ -62,6 +62,31 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     app.UseHsts();
 }
+else
+{
+    // W trybie Development lepiej widzieć pełne błędy
+    app.UseDeveloperExceptionPage();
+}
+
+// Dodaj globalną obsługę błędów
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex)
+    {
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Nieobsłużony błąd w aplikacji");
+        
+        if (!context.Response.HasStarted)
+        {
+            context.Response.StatusCode = 500;
+            await context.Response.WriteAsync("Wystąpił błąd. Spróbuj ponownie.");
+        }
+    }
+});
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
